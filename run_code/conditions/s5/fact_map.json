@@ -1,0 +1,343 @@
+{
+ "spec5": {
+  "regime": "partial",
+  "ablated": [
+   {
+    "unit": "port range",
+    "canary": "[2048, 49151]",
+    "checks": [
+     "int_range_validation_fail",
+     "int_boundary_fail"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": false
+   },
+   {
+    "unit": "request_timeout range",
+    "canary": "[1, 3600]",
+    "checks": [
+     "int_range_validation_fail"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": false
+   },
+   {
+    "unit": "max_connections range",
+    "canary": "[1, 1000]",
+    "checks": [
+     "int_range_validation_fail"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": false
+   },
+   {
+    "unit": "keep_alive_timeout range",
+    "canary": "[1, 300]",
+    "checks": [
+     "int_range_validation_fail"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": false
+   },
+   {
+    "unit": "log_level exact set + case-sensitivity",
+    "canary": "case-sensitive",
+    "checks": [
+     "enum_validation_fail"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": "partial (config_schema.json may list some)"
+   },
+   {
+    "unit": "bool accepted-set incl on/off + invalid raises",
+    "canary": "on/off",
+    "checks": [
+     "bool_coercion_fail",
+     "bool_invalid_fail"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": false
+   }
+  ]
+ },
+ "spec6": {
+  "regime": "partial",
+  "ablated": [
+   {
+    "unit": "M6 EXISTS",
+    "canary": "EXISTS",
+    "checks": [
+     "M6 conformance"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": "tests/test_protocol.py may cover"
+   },
+   {
+    "unit": "M9 unknown command",
+    "canary": "ERR unknown_command",
+    "checks": [
+     "M9"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": "tests may cover"
+   },
+   {
+    "unit": "M10 key length limit",
+    "canary": "ERR key_too_long",
+    "checks": [
+     "M10"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": false
+   },
+   {
+    "unit": "M11 value size limit",
+    "canary": "ERR value_too_large",
+    "checks": [
+     "M11"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": false
+   },
+   {
+    "unit": "M12 capacity limit",
+    "canary": "ERR store_full",
+    "checks": [
+     "M12"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": false
+   },
+   {
+    "unit": "S4 SETEX expiry",
+    "canary": "SETEX",
+    "checks": [
+     "S4"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": false
+   },
+   {
+    "unit": "S5 APPEND return",
+    "canary": "APPEND",
+    "checks": [
+     "S5"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": false
+   }
+  ]
+ },
+ "p5": {
+  "regime": "partial",
+  "ablated": [
+   {
+    "unit": "config_changed field list",
+    "canary": "old_value",
+    "checks": [
+     "config_changed required-fields"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": "CHECK corpus/audit_policy.txt"
+   },
+   {
+    "unit": "payment_initiated field list",
+    "canary": "recipient_account",
+    "checks": [
+     "payment_initiated required-fields"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": "CHECK corpus/audit_policy.txt"
+   },
+   {
+    "unit": "log_id uniqueness hard-req",
+    "canary": "unique `log_id`",
+    "checks": [
+     "uniqueness check"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": false
+   },
+   {
+    "unit": "verify_log detects corrupted/MISSING signature",
+    "canary": "corrupted or is missing",
+    "checks": [
+     "verify_log detection"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": "tests/test_audit.py may cover"
+   }
+  ]
+ },
+ "api1": {
+  "regime": "partial",
+  "ablated": [
+   {
+    "unit": "E4 must-NOT-shim tokens (security)",
+    "canary": "/v1/users/<int:uid>/tokens",
+    "checks": [
+     "acceptance 4"
+    ],
+    "fault_correlated": "conditional commission (only fails if a tokens shim is created)",
+    "artifact_recoverable": "tests/test_v1_compat.py encodes it"
+   },
+   {
+    "unit": "E5 remove legacy_export shim",
+    "canary": "v1_legacy_export",
+    "checks": [
+     "acceptance 5"
+    ],
+    "fault_correlated": true,
+    "artifact_recoverable": "dead route visible in app.py"
+   }
+  ]
+ },
+ "cr4": {
+  "regime": "partial",
+  "ablated": [
+   {
+    "unit": "V3/G3 pagination envelope",
+    "canary": "page_size",
+    "checks": [
+     "pagination checks"
+    ],
+    "fault_correlated": true,
+    "artifact_recoverable": "tests/test_api.py partially"
+   },
+   {
+    "unit": "V4/G4 status codes",
+    "canary": "201 Created",
+    "checks": [
+     "status-code checks"
+    ],
+    "fault_correlated": true,
+    "artifact_recoverable": "tests partially"
+   },
+   {
+    "unit": "V6/G6 error schema",
+    "canary": "SCREAMING_SNAKE_CASE",
+    "checks": [
+     "error-schema checks"
+    ],
+    "fault_correlated": true,
+    "artifact_recoverable": "tests partially"
+   }
+  ]
+ },
+ "cross3": {
+  "regime": "partial",
+  "ablated": [
+   {
+    "unit": "req3 oneof exactly-one",
+    "canary": "oneof",
+    "checks": [
+     "oneof test"
+    ],
+    "fault_correlated": true,
+    "artifact_recoverable": "schema.py comments? check"
+   },
+   {
+    "unit": "req4 enum name->int",
+    "canary": "string names to integer values",
+    "checks": [
+     "enum test"
+    ],
+    "fault_correlated": true,
+    "artifact_recoverable": "schema.py defines enums"
+   },
+   {
+    "unit": "req6 429->RESOURCE_EXHAUSTED(8)",
+    "canary": "RESOURCE_EXHAUSTED",
+    "checks": [
+     "error-mapping test"
+    ],
+    "fault_correlated": true,
+    "artifact_recoverable": false
+   }
+  ]
+ },
+ "crypto1": {
+  "regime": "minimal(single-needle)",
+  "ablated": [
+   {
+    "unit": "req1 96-bit RANDOM nonce (not counter)",
+    "canary": "not counter-based",
+    "checks": [
+     "C4 test_nonce_collision"
+    ],
+    "fault_correlated": true,
+    "artifact_recoverable": "test filename visible"
+   }
+  ]
+ },
+ "pipe3_stream_processing": {
+  "regime": "minimal(single-needle)",
+  "ablated": [
+   {
+    "unit": "req3 UTF-8 encoding",
+    "canary": "latin-1",
+    "checks": [
+     "encoding test"
+    ],
+    "fault_correlated": true,
+    "artifact_recoverable": "test content visible"
+   }
+  ]
+ },
+ "multi4": {
+  "regime": "minimal(single-needle)",
+  "ablated": [
+   {
+    "unit": "req2 core>=1.2 pin",
+    "canary": "core>=1.2",
+    "checks": [
+     "test_versions"
+    ],
+    "fault_correlated": true,
+    "artifact_recoverable": "low (BaseProcessor origin non-obvious)"
+   }
+  ]
+ },
+ "test9": {
+  "regime": "minimal(single-needle)",
+  "ablated": [
+   {
+    "unit": "timeout error-handling (sim + service.py fix)",
+    "canary": "try/except",
+    "checks": [
+     "error-handling checks"
+    ],
+    "fault_correlated": true,
+    "artifact_recoverable": "missing handler visible in service.py"
+   }
+  ]
+ },
+ "lh5": {
+  "regime": "minimal(single-needle)",
+  "ablated": [
+   {
+    "unit": "checksum manifest exact shape (keys source/transformed, 64-hex)",
+    "canary": "64-character hex",
+    "checks": [
+     "checksum checks"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": "validate.py readable"
+   }
+  ]
+ },
+ "ir2": {
+  "regime": "minimal(single-needle)",
+  "ablated": [
+   {
+    "unit": "verbatim evidence line-range rule",
+    "canary": "**verbatim**",
+    "checks": [
+     "verbatim check"
+    ],
+    "fault_correlated": false,
+    "artifact_recoverable": false
+   }
+  ]
+ }
+}

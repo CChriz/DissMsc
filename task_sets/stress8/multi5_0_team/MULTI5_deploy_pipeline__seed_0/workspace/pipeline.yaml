@@ -1,0 +1,22 @@
+# CI/CD Pipeline for webapp
+name: webapp-pipeline
+trigger:
+  branches: [main, develop]
+
+stages:
+  - name: lint
+    script: scripts/lint.sh
+    timeout: 300
+
+  - name: test
+    script: scripts/test.sh
+    timeout: 600
+    depends_on: [lint]
+
+  - name: deploy
+    script: scripts/deploy.sh
+    timeout: 900
+    depends_on: [test]
+    environment:
+      APP_VERSION: "1.0.0"
+      REGISTRY: "registry.example.com"

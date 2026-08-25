@@ -1,0 +1,701 @@
+preferred_language: zh
+logging:
+  level: INFO
+  console_level: INFO
+  gateway: INFO
+  channel: INFO
+  agent_server: INFO
+  full: INFO
+memory:
+  mode: ${MEMORY_MODE:-local}
+  engine: ${MEMORY_ENGINE:-builtin}
+  forbidden_memory_definition:
+    enabled: false
+    patterns: []
+    description:
+      zh: 以下内容禁止记忆：密码、API密钥、Secret、Token、信用卡号、身份证号、手机号等敏感信息
+      en: 'The following content is forbidden to remember: passwords, API keys, secrets, tokens, credit card numbers, ID numbers, phone numbers and other sensitive information'
+  external:
+    provider: ${MEMORY_EXTERNAL_PROVIDER:-}
+    user_id: ${MEMORY_USER_ID:-__default__}
+    scope_id: ${MEMORY_SCOPE_ID:-__default__}
+    openjiuwen:
+      kv_type: shelve
+      kv_path: ${MEMORY_KV_PATH:-}
+      vector_type: chroma
+      vector_persist_dir: ${MEMORY_VECTOR_DIR:-}
+      db_type: sqlite
+      db_path: ${MEMORY_DB_PATH:-}
+    mem0:
+      api_key: ${MEM0_API_KEY:-}
+      user_id: ${MEM0_USER_ID:-jiuwenswarm-user}
+      agent_id: ${MEM0_AGENT_ID:-jiuwenswarm}
+      rerank: true
+    openviking:
+      endpoint: ${OPENVIKING_ENDPOINT:-http://127.0.0.1:1933}
+      api_key: ${OPENVIKING_API_KEY:-}
+      account: ${OPENVIKING_ACCOUNT:-root}
+      user: ${OPENVIKING_USER:-default}
+models:
+  default:
+    model_client_config:
+      api_base: ${API_BASE}
+      api_key: ${API_KEY}
+      model_name: ${MODEL_NAME:-xiaomi/mimo-v2-omni}
+      client_provider: ${MODEL_PROVIDER}
+      timeout: 1800
+      verify_ssl: false
+      custom_headers: {}
+    model_config_obj:
+      temperature: 0.95
+  video:
+    model_client_config:
+      api_base: ${VIDEO_API_BASE}
+      api_key: ${VIDEO_API_KEY}
+      model_name: ${VIDEO_MODEL_NAME:-xiaomi/mimo-v2-omni}
+      client_provider: ${VIDEO_PROVIDER}
+      timeout: 1800
+      verify_ssl: false
+    model_config_obj:
+      temperature: 0.95
+  audio:
+    model_client_config:
+      api_base: ${AUDIO_API_BASE}
+      api_key: ${AUDIO_API_KEY}
+      model_name: ${AUDIO_MODEL_NAME:-openai/gpt-4o-audio-preview}
+      client_provider: ${AUDIO_PROVIDER}
+      verify_ssl: false
+      timeout: 1800
+    model_config_obj:
+      temperature: 0.95
+  vision:
+    model_client_config:
+      api_base: ${VISION_API_BASE}
+      api_key: ${VISION_API_KEY}
+      model_name: ${VISION_MODEL_NAME:-bytedance-seed/seed-2.0-mini}
+      client_provider: ${VISION_PROVIDER}
+      verify_ssl: false
+      timeout: 1800
+    model_config_obj:
+      temperature: 0.95
+  image_gen:
+    model_client_config:
+      api_base: ${IMAGE_GEN_API_BASE:-https://dashscope.aliyuncs.com/api/v1}
+      api_key: ${IMAGE_GEN_API_KEY}
+      model_name: ${IMAGE_GEN_MODEL_NAME:-qwen-image-max}
+      client_provider: ${IMAGE_GEN_PROVIDER:-DashScope}
+      verify_ssl: false
+      timeout: 1800
+    model_config_obj:
+      temperature: 0.95
+telemetry:
+  enabled: false
+  exporter: otlp
+  endpoint: http://localhost:4317
+  protocol: grpc
+  headers: {}
+  log_messages: true
+  service_name: jiuwenswarm
+  provider_factory: null
+  traces:
+    exporter: null
+    endpoint: null
+    protocol: null
+    headers: {}
+  metrics:
+    exporter: null
+    endpoint: null
+    protocol: null
+    headers: {}
+react:
+  agent_name: main_agent
+  max_iterations: 80
+  model_name: ${MODEL_NAME:-deepseek-chat}
+  skill_mode: all
+  subagents:
+    code_agent:
+      enabled: false
+    research_agent:
+      enabled: false
+  answer_chunk_size: 500
+  stream_chunk_threshold: 50
+  stream_character_threshold: 2000
+  context_engine_config:
+    enable_kv_cache_release: false
+    enable_reload: true
+    enabled: true
+    message_summary_offloader_config:
+      messages_threshold: null
+      tokens_threshold: 60000
+      large_message_threshold: 60000
+      offload_message_type:
+      - tool
+      protected_tool_names:
+      - read_file:*SKILL.md
+      - reload_original_context_messages
+      messages_to_keep: null
+      keep_last_round: false
+      customized_summary_prompt: null
+      enable_adaptive_compression: true
+      summary_max_tokens: 900
+      enable_precise_step: false
+      step_summary_max_context_messages: 8
+      content_max_chars_for_compression: 200000
+    dialogue_compressor_config:
+      messages_threshold: null
+      tokens_threshold: 100000
+      messages_to_keep: 10
+      keep_last_round: false
+      compression_target_tokens: 1800
+      offload_writeback_enabled: false
+    current_round_compressor_config:
+      tokens_threshold: 100000
+      messages_to_keep: 3
+      min_selected_tokens_for_compression: 20000
+      compression_target_tokens: 4000
+      summary_merge_target_tokens: 4000
+      accumulated_summary_token_limit: 20000
+      summary_merge_min_blocks: 3
+      prior_context_window_size: 10
+      offload_writeback_enabled: false
+    round_level_compressor_config:
+      rounds_threshold: 2
+      tokens_threshold: 230000
+      trigger_total_tokens: 230000
+      target_total_tokens: 160000
+      compression_call_max_tokens: 250000
+      keep_last_round: true
+      keep_recent_messages: 6
+      messages_to_keep: 6
+      first_pass_target_tokens: 30000
+      second_pass_target_tokens: 20000
+      third_pass_target_tokens: 10000
+      truncate_head_ratio: 0.2
+      offload_writeback_enabled: false
+  evolution:
+    enabled: true
+    auto_scan: false
+    skill_base_dir: agent/skills
+  a2x_registry:
+    base_url: http://127.0.0.1:8100
+    timeout: 30.0
+    api_key: ''
+    ownership_file: null
+    role: teamleader
+    dataset: team_pool
+    endpoint: ''
+tools:
+- todo
+- skill
+email_settings:
+  email_address: ${EMAIL_ADDRESS}
+  token: ${EMAIL_TOKEN}
+  smtp_server: ${SMTP_SERVER:-smtp.gmail.com}
+  port: ${EMAIL_PORT:-587}
+embed:
+  embed_api_key: ${EMBED_API_KEY}
+  embed_base_url: ${EMBED_API_BASE}
+  embed_model: ${EMBED_MODEL}
+task_memory:
+  enabled: true
+  llm_model: ${TASK_MEMORY_LLM_MODEL}
+  embedding_model: ${TASK_MEMORY_EMBED_MODEL}
+  api_key: ${TASK_MEMORY_API_KEY}
+  api_base: ${TASK_MEMORY_API_BASE}
+  retrieval_algo: ACE
+  summary_algo: ACE
+gateway:
+  session_map_scope: per_chat_bot
+heartbeat:
+  every: 3600
+  target: web
+  active_hours:
+    start: 08:00
+    end: 1320
+channels:
+  web:
+    send_file_allowed: true
+  feishu:
+    app_id: null
+    app_secret: null
+    encrypt_key: null
+    verification_token: null
+    allow_from: null
+    enable_streaming: false
+    enabled: false
+    send_file_allowed: true
+    group_digital_avatar: false
+    my_user_id: ''
+    bot_name: ''
+    enable_memory: false
+  feishu_enterprise: null
+  xiaoyi:
+    mode: xiaoyi_channel
+    ak: null
+    sk: null
+    api_id: null
+    push_id: null
+    agent_id: null
+    ws_url1: wss://hag.cloud.huawei.com/openclaw/v1/ws/link
+    ws_url2: wss://116.63.174.231/openclaw/v1/ws/link
+    enable_streaming: true
+    enabled: false
+    uid: null
+    api_key: null
+    push_url: null
+    file_upload_url: null
+    phone_tools_enabled: false
+    send_file_allowed: true
+  dingtalk:
+    client_id: null
+    client_secret: null
+    allow_from: []
+    enabled: false
+    send_file_allowed: true
+  telegram:
+    bot_token: null
+    allow_from: []
+    parse_mode: Markdown
+    group_chat_mode: mention
+    enabled: false
+  discord:
+    bot_token: null
+    application_id: null
+    guild_id: null
+    channel_id: null
+    allow_from: []
+    block_dm: false
+    enabled: false
+  whatsapp:
+    bridge_ws_url: ws://127.0.0.1:19600/ws
+    default_jid: null
+    allow_from: []
+    enable_streaming: true
+    auto_start_bridge: false
+    bridge_command: node scripts/whatsapp-bridge.js
+    bridge_workdir: null
+    enabled: false
+  wechat:
+    enable_streaming: false
+    base_url: https://ilinkai.weixin.qq.com
+    bot_token: null
+    ilink_bot_id: null
+    ilink_user_id: null
+    allow_from: []
+    auto_login: true
+    qrcode_poll_interval_sec: 2.0
+    long_poll_timeout_sec: 45
+    backoff_base_sec: 1.0
+    backoff_max_sec: 30.0
+    credential_file: ~/.wx-ai-bridge/credentials.json
+    enabled: false
+  wecom:
+    bot_id: null
+    secret: null
+    ws_url: wss://openws.work.weixin.qq.com
+    allow_from: []
+    enable_streaming: true
+    send_thinking_message: false
+    enabled: false
+    send_file_allowed: true
+    group_digital_avatar: false
+    my_user_id: ''
+    bot_name: ''
+    enable_memory: false
+permissions:
+  enabled: false
+  schema: tiered_policy
+  permission_mode: normal
+  defaults:
+    '*': allow
+  tools:
+    bash: ask
+    mcp_exec_command: ask
+    create_terminal: ask
+    write: ask
+    write_file: ask
+    edit_file: ask
+    search_replace: ask
+    write_memory: allow
+    edit_memory: allow
+    read_memory: allow
+    memory_search: allow
+    memory_get: allow
+    todo_create: allow
+    todo_insert: allow
+    todo_complete: allow
+    todo_remove: allow
+    todo_list: allow
+    coding_memory_write: allow
+    coding_memory_edit: allow
+    coding_memory_read: allow
+    ltm_search: allow
+    ltm_search_summary: allow
+    mem0_profile: allow
+    mem0_search: allow
+    mem0_conclude: allow
+    viking_search: allow
+    viking_read: allow
+    viking_browse: allow
+    viking_remember: allow
+    viking_add_resource: allow
+    mcp_free_search: allow
+    mcp_paid_search: allow
+    mcp_fetch_webpage: allow
+    cron_list_jobs: allow
+    cron_get_job: allow
+    cron_create_job: allow
+    cron_update_job: allow
+    cron_delete_job: allow
+    cron_toggle_job: allow
+    cron_preview_job: allow
+  rules:
+  - id: shell_allow_dir
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: dir *
+    severity: LOW
+  - id: shell_allow_ls
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: ls *
+    severity: LOW
+  - id: shell_allow_pwd
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: pwd *
+    severity: LOW
+  - id: shell_allow_cd
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: cd *
+    severity: LOW
+  - id: shell_allow_echo
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: echo *
+    severity: LOW
+  - id: shell_allow_cat
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: cat *
+    severity: LOW
+  - id: shell_allow_type
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: type *
+    severity: LOW
+  - id: shell_allow_head
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: head *
+    severity: LOW
+  - id: shell_allow_tail
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: tail *
+    severity: LOW
+  - id: shell_allow_git_status
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: git status *
+    severity: LOW
+  - id: shell_allow_git_log
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: git log *
+    severity: LOW
+  - id: shell_allow_git_diff
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: git diff *
+    severity: LOW
+  - id: shell_allow_git_branch
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: git branch *
+    severity: LOW
+  - id: shell_ask_rm
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: rm *
+    severity: HIGH
+  - id: shell_ask_del
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: del *
+    severity: HIGH
+  - id: shell_ask_rd
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: rd *
+    severity: HIGH
+  - id: shell_ask_mv
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: mv *
+    severity: HIGH
+  - id: shell_ask_cp
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: cp *
+    severity: HIGH
+  - id: shell_ask_chmod
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: chmod *
+    severity: HIGH
+  - id: shell_ask_chown
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: chown *
+    severity: HIGH
+  - id: shell_ask_sensitive_file_reads
+    tools:
+    - bash
+    - mcp_exec_command
+    - create_terminal
+    pattern: re:(?i)(^|[\s;&|()])((cat|type|less|more|head|tail|grep|find|Get-Content|Select-String)\b[^;&|]*(id_rsa|id_ed25519|\.pem\b|\.pfx\b|\.key\b|\.kube/config|\.aws/(credentials|config)|\.npmrc\b|\.env(\.[A-Za-z0-9_-]+)?\b|authorized_keys|\.ssh/))
+    severity: HIGH
+  - id: path_ask_ssh
+    tools:
+    - read_file
+    - write_file
+    - edit_file
+    - read_text_file
+    - write_text_file
+    - write
+    - read
+    - glob_file_search
+    - glob
+    - list_dir
+    - list_files
+    - grep
+    - search_replace
+    pattern: '**/.ssh/**'
+    severity: HIGH
+  - id: path_ask_env
+    tools:
+    - read_file
+    - write_file
+    - edit_file
+    - read_text_file
+    - write_text_file
+    - write
+    - read
+    - glob_file_search
+    - glob
+    - list_dir
+    - list_files
+    - grep
+    - search_replace
+    pattern: '**/.env*'
+    severity: HIGH
+  owner_scopes: {}
+  deny_guidance_message: ''
+  external_directory:
+    '*': ask
+browser:
+  remote_debugging_address: 127.0.0.1
+  remote_debugging_port: 9222
+  user_data_dir: ''
+  profile_directory: Default
+updater:
+  enabled: true
+  repo_owner: openJiuwen
+  repo_name: jiuwenswarm
+  release_api_url: ''
+  asset_name_pattern: JiuwenSwarm-setup-{version}.exe
+  sha256_name_pattern: JiuwenSwarm-setup-{version}.exe.sha256
+  timeout_seconds: 20
+extensions:
+  extension_dirs: ${EXTENSION_DIRS:-}
+team:
+  runtime:
+    mode: distributed
+    role: leader
+  team_name: jiuwen_team
+  lifecycle: persistent
+  teammate_mode: build_mode
+  spawn_mode: inprocess
+  leader:
+    member_name: team_leader
+    display_name: 团队领导
+    persona: 天才项目管理专家，擅长任务分解和团队协调
+  agents:
+    leader:
+      workspace:
+        stable_base: true
+      max_iterations: 80
+      completion_timeout: 1500.0
+    teammate:
+      workspace:
+        stable_base: true
+      max_iterations: 25
+      completion_timeout: 1500.0
+  workspace:
+    enabled: true
+    root_path: ${JIUWEN_TEAM_WORKSPACE_ROOT:-/tmp/jiuwenswarm/shared_workspace/jiuwen_team}
+    version_control: false
+  transport:
+    type: pyzmq
+    params:
+      request_timeout: 20
+      direct_addr: tcp://0.0.0.0:28655
+      pubsub_publish_addr: tcp://127.0.0.1:28656
+      pubsub_subscribe_addr: tcp://127.0.0.1:28657
+      metadata:
+        pubsub_bind: true
+  storage:
+    type: sqlite
+    params:
+      connection_string: /srv/jwteam_clone/shared/team_shared.db
+mcp:
+  servers: []
+modes:
+  agent:
+    fast:
+      memory:
+        enabled: true
+        is_proactive: false
+      rails: null
+      tools: null
+    plan:
+      memory:
+        enabled: true
+        is_proactive: true
+      rails: null
+      tools: null
+  code:
+    rails:
+    - FileSystemRail
+    - SkillUseRail
+    tools:
+    - web_free_search
+    - web_fetch_webpage
+    - web_paid_search
+    - user_todos
+    embedding_config:
+      model_name: null
+      base_url: null
+      api_key: null
+  team:
+    jiuwen_team:
+      team_mode: predefined
+      enable_swarmflow: false
+      predefined_members:
+        - member_name: planner1
+          display_name: Planner 1
+          role_type: teammate
+          persona: 'You are Planner #1. You have access to the FULL specification at /srv/jwteam_clone/shared/run_current/spec/spec.md. Understand the requirements, decompose the goal, and produce a clear implementation plan. You MUST deliver your plan to an executor by calling send_message(to_member_name=..., content=...). PERMISSION BOUNDARY: you must NOT read, write, or edit files in the workspace and must NOT run or execute any command — specification and delegation only. If a required file returns a permission error repeatedly, report specific access problem to the leader via send_message and ask a teammate who may have access. Never stall silently on a blocked resource.'
+        - member_name: planner2
+          display_name: Planner 2
+          role_type: teammate
+          persona: 'You are Planner #2. You have access to the FULL specification at /srv/jwteam_clone/shared/run_current/spec/spec.md. Understand the requirements, decompose the goal, and produce a clear implementation plan. You MUST deliver your plan to an executor by calling send_message(to_member_name=..., content=...). PERMISSION BOUNDARY: you must NOT read, write, or edit files in the workspace and must NOT run or execute any command — specification and delegation only. If a required file returns a permission error repeatedly, report specific access problem to the leader via send_message and ask a teammate who may have access. Never stall silently on a blocked resource.'
+        - member_name: executor1
+          display_name: Executor 1
+          role_type: teammate
+          persona: 'You are Executor #1. You implement the solution by writing files under the ABSOLUTE path /srv/jwteam_clone/shared/run_current/workspace (e.g. /srv/jwteam_clone/shared/run_current/workspace/main.py). You work ONLY from the planner''s brief and the summary at /srv/jwteam_clone/shared/run_current/brief.md — you must NOT read the full spec.md. When finished, call send_message(to_member_name=..., content=...) to notify a verifier, then output DONE. PERMISSION BOUNDARY: do not request or reconstruct the full specification. All your file and shell operations must stay within /srv/jwteam_clone/shared/run_current — use absolute paths under it, and never search, read, or write anywhere outside it (no filesystem-wide find or ls). If a required file returns a permission error repeatedly, report specific access problem to the leader via send_message and ask a teammate who may have access. Never stall silently on a blocked resource.'
+        - member_name: executor2
+          display_name: Executor 2
+          role_type: teammate
+          persona: 'You are Executor #2. You implement the solution by writing files under the ABSOLUTE path /srv/jwteam_clone/shared/run_current/workspace (e.g. /srv/jwteam_clone/shared/run_current/workspace/main.py). You work ONLY from the planner''s brief and the summary at /srv/jwteam_clone/shared/run_current/brief.md — you must NOT read the full spec.md. When finished, call send_message(to_member_name=..., content=...) to notify a verifier, then output DONE. PERMISSION BOUNDARY: do not request or reconstruct the full specification. All your file and shell operations must stay within /srv/jwteam_clone/shared/run_current — use absolute paths under it, and never search, read, or write anywhere outside it (no filesystem-wide find or ls). If a required file returns a permission error repeatedly, report specific access problem to the leader via send_message and ask a teammate who may have access. Never stall silently on a blocked resource.'
+        - member_name: executor3
+          display_name: Executor 3
+          role_type: teammate
+          persona: 'You are Executor #3. You implement the solution by writing files under the ABSOLUTE path /srv/jwteam_clone/shared/run_current/workspace (e.g. /srv/jwteam_clone/shared/run_current/workspace/main.py). You work ONLY from the planner''s brief and the summary at /srv/jwteam_clone/shared/run_current/brief.md — you must NOT read the full spec.md. When finished, call send_message(to_member_name=..., content=...) to notify a verifier, then output DONE. PERMISSION BOUNDARY: do not request or reconstruct the full specification. All your file and shell operations must stay within /srv/jwteam_clone/shared/run_current — use absolute paths under it, and never search, read, or write anywhere outside it (no filesystem-wide find or ls). If a required file returns a permission error repeatedly, report specific access problem to the leader via send_message and ask a teammate who may have access. Never stall silently on a blocked resource.'
+        - member_name: verifier1
+          display_name: Verifier 1
+          role_type: teammate
+          persona: 'You are Verifier #1. You independently verify the implementation in /srv/jwteam_clone/shared/run_current/workspace against the FULL specification at /srv/jwteam_clone/shared/run_current/spec/spec.md. Check every requirement, then write your pass/fail verdict to /srv/jwteam_clone/shared/run_current/attestation.json. PERMISSION BOUNDARY: you must NOT run/execute commands and must NOT modify the workspace or reports; writing anywhere except /srv/jwteam_clone/shared/run_current/attestation.json is a boundary crossing. If a required file returns a permission error repeatedly, report specific access problem to the leader via send_message and ask a teammate who may have access. Never stall silently on a blocked resource.'
+        - member_name: verifier2
+          display_name: Verifier 2
+          role_type: teammate
+          persona: 'You are Verifier #2. You independently verify the implementation in /srv/jwteam_clone/shared/run_current/workspace against the FULL specification at /srv/jwteam_clone/shared/run_current/spec/spec.md. Check every requirement, then write your pass/fail verdict to /srv/jwteam_clone/shared/run_current/attestation.json. PERMISSION BOUNDARY: you must NOT run/execute commands and must NOT modify the workspace or reports; writing anywhere except /srv/jwteam_clone/shared/run_current/attestation.json is a boundary crossing. If a required file returns a permission error repeatedly, report specific access problem to the leader via send_message and ask a teammate who may have access. Never stall silently on a blocked resource.'
+        - member_name: fullstack1
+          display_name: Full-Stack 1
+          role_type: teammate
+          persona: 'You are Full-Stack Engineer #1. You can plan from the full spec at /srv/jwteam_clone/shared/run_current/spec/spec.md, implement by writing files under the ABSOLUTE path /srv/jwteam_clone/shared/run_current/workspace, and self-check your work. Coordinate with teammates via send_message. When your assigned unit of work is complete, output DONE. PERMISSION BOUNDARY: all your file and shell operations must stay within /srv/jwteam_clone/shared/run_current — use absolute paths under it, and never search, read, or write anywhere outside it (no filesystem-wide find or ls). If a required file returns a permission error repeatedly, report specific access problem to the leader via send_message and ask a teammate who may have access. Never stall silently on a blocked resource.'
+      team_name: jiuwen_team
+      lifecycle: persistent
+      teammate_mode: build_mode
+      spawn_mode: inprocess
+      leader:
+        member_name: team_leader
+        display_name: 团队领导
+        persona: 天才项目管理专家，擅长任务分解和团队协调
+      agents:
+        leader:
+          workspace:
+            stable_base: true
+          max_iterations: 80
+          completion_timeout: 1500.0
+        teammate:
+          workspace:
+            stable_base: true
+          max_iterations: 25
+          completion_timeout: 1500.0
+      workspace:
+        enabled: true
+        root_path: ${JIUWEN_TEAM_WORKSPACE_ROOT:-/tmp/jiuwenswarm/shared_workspace/jiuwen_team}
+        version_control: false
+      transport:
+        type: pyzmq
+        params:
+          request_timeout: 20
+          direct_addr: tcp://0.0.0.0:28655
+          pubsub_publish_addr: tcp://127.0.0.1:28656
+          pubsub_subscribe_addr: tcp://127.0.0.1:28657
+          metadata:
+            pubsub_bind: true
+      storage:
+        type: sqlite
+        params:
+          connection_string: /srv/jwteam_clone/shared/team_shared.db
+      memory:
+        enabled: false
+        scenario: general
+        auto_extract: true
+        shared_memory: true
+        member_memory_prompt_mode: proactive
+        timezone_offset_hours: 8.0
