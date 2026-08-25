@@ -1,0 +1,148 @@
+{
+  "attestation": {
+    "verifier": "verifier1",
+    "timestamp": "2026-08-10T01:41:40+01:00",
+    "verification_method": "static code review + pytest execution (fullstack1)",
+    "verdict": "PASS",
+    "summary": "全部 6 个 Bug 已修复。全部 7 条 spec 需求已验证通过。30/30 测试通过，零失败，零回归。"
+  },
+  "requirements": [
+    {
+      "id": 1,
+      "description": "int64 字段必须保持完整精度，不得截断为 32-bit",
+      "verdict": "PASS",
+      "file": "bridge/translator.py",
+      "line": 39,
+      "fix": "移除 '& 0xFFFFFFFF' 掩码 — msg.event_id = int(data.get('event_id', 0))",
+      "static_review": "Python int 天然支持任意精度，无需掩码。int() 调用保留了完整 int64 范围。",
+      "test_results": [
+        "test_int64_not_truncated (2^53+1) — PASSED",
+        "test_zero — PASSED",
+        "test_int32_max (2^31-1) — PASSED",
+        "test_above_32bit (2^32) — PASSED",
+        "test_int64_max (2^63-1) — PASSED",
+        "test_int64_min (-2^63) — PASSED",
+        "test_negative_value (-1000) — PASSED",
+        "test_snowflake_id (1759288472991170632) — PASSED"
+      ]
+    },
+    {
+      "id": 2,
+      "description": "bytes 字段必须从 JSON 字符串做 base64 解码",
+      "verdict": "PASS",
+      "file": "bridge/translator.py",
+      "line": "47-52",
+      "fix": "base64.b64decode(payload_b64) 替代直接字符串赋值；解码失败时回退为 b''；同时应用于 binary_content oneof 变体（第 67-68 行）",
+      "static_review": "使用标准库 base64.b64decode()，自动处理无填充场景。异常处理通过 try/except 捕获，安全回退为空 bytes。",
+      "test_results": [
+        "test_bytes_field_base64_decoded — PASSED",
+        "test_empty_payload — PASSED",
+        "test_unpadded (自动处理缺失填充) — PASSED",
+        "test_null_bytes (\\x00\\x01\\x02) — PASSED",
+        "test_high_bytes (\\xff\\xfe\\xfd) — PASSED",
+        "test_invalid_base64 (优雅回退) — PASSED"
+      ]
+    },
+    {
+      "id": 3,
+      "description": "oneof 字段必须恰好设置一个变体，不能同时设置多个",
+      "verdict": "PASS",
+      "file": "bridge/translator.py",
+      "line": "58-73",
+      "fix": "if/elif 逻辑：text_content 优先于 binary_content；两者都存在时只设 text；两者都不存在时保持默认值；binary_content 经 base64 解码后赋值",
+      "static_review": "逻辑清晰：text 优先策略解决冲突；elif 保证互斥；Consumer.validate_oneof() 提供防御性检查。",
+      "test_results": [
+        "test_oneof_single_variant_text — PASSED",
+        "test_oneof_single_variant_empty — PASSED",
+        "test_binary_variant (仅 binary_content) — PASSED",
+        "test_text_wins_over_binary (互斥验证) — PASSED",
+        "test_unknown_content_not_crash (两者都不存在) — PASSED"
+      ]
+    },
+    {
+      "id": 4,
+      "description": "enum 字段必须从字符串名称映射为整数值",
+      "verdict": "PASS",
+      "file": "bridge/translator.py",
+      "line": "79-80",
+      "fix": "STATUS_MAP.get(status_str, 0) 替代直接字符串赋值；未知名称默认 0（proto3 行为）",
+      "static_review": "STATUS_MAP 覆盖所有 4 个 EventStatus 值。默认值 0 = STATUS_UNKNOWN，与 proto3 语义一致。",
+      "test_results": [
+        "test_enum_mapped_to_int (全部 4 个已知状态) — PASSED",
+        "test_unknown_name_defaults_to_zero (STATUS_DELETED) — PASSED",
+        "test_empty_string_defaults_to_zero — PASSED",
+        "test_missing_status_defaults_to_zero — PASSED"
+      ]
+    },
+    {
+      "id": 5,
+      "description": "HTTP 404 必须映射为 NOT_FOUND (5)，而非 INVALID_ARGUMENT (3)",
+      "verdict": "PASS",
+      "file": "bridge/error_mapper.py",
+      "line": 25,
+      "fix": "ErrorCode.INVALID_ARGUMENT (3) → ErrorCode.NOT_FOUND (5)",
+      "static_review": "NOT_FOUND 是 HTTP 404 的规范 gRPC 映射（google.rpc.Code）。语义正确：404 表示资源不存在（幂等可重试），非参数无效。",
+      "test_results": [
+        "test_404_maps_to_not_found — PASSED",
+        "test_e2e_error_routing — PASSED (确认 NOT_FOUND 出现在 consumer.errors 中)"
+      ]
+    },
+    {
+      "id": 6,
+      "description": "HTTP 429 必须映射为 RESOURCE_EXHAUSTED (8)，而非 INTERNAL (13)",
+      "verdict": "PASS",
+      "file": "bridge/error_mapper.py",
+      "line": 29,
+      "fix": "ErrorCode.INTERNAL (13) → ErrorCode.RESOURCE_EXHAUSTED (8)",
+      "static_review": "RESOURCE_EXHAUSTED 是 HTTP 429 的规范 gRPC 映射。语义正确：429 表示速率限制（需退避重试），非服务端内部错误。额外增强：map_http_error_with_headers() 传播 Retry-After。",
+      "test_results": [
+        "test_429_maps_to_resource_exhausted — PASSED",
+        "test_e2e_error_routing — PASSED (确认 RESOURCE_EXHAUSTED 出现在 consumer.errors 中)"
+      ]
+    },
+    {
+      "id": 7,
+      "description": "全部测试必须通过：pytest tests/",
+      "verdict": "PASS",
+      "evidence": {
+        "executor": "fullstack1",
+        "command": "pytest tests/ -v",
+        "directory": "/srv/jwteam_clone/shared/run_current/impl/",
+        "result": "30 passed, 0 failed, 0 error in 0.08s",
+        "platform": "linux, Python 3.11.15, pytest-9.1.1",
+        "breakdown": {
+          "test_translation.py": "18 passed (5 original + 13 boundary)",
+          "test_errors.py": "5 passed",
+          "test_e2e.py": "2 passed"
+        }
+      }
+    }
+  ],
+  "non_bug_mappings_verified": [
+    {"http_status": 200, "expected": "OK (0)", "actual": "ErrorCode.OK", "verdict": "PASS"},
+    {"http_status": 400, "expected": "INVALID_ARGUMENT (3)", "actual": "ErrorCode.INVALID_ARGUMENT", "verdict": "PASS"},
+    {"http_status": "401, 403", "expected": "INVALID_ARGUMENT (3)", "actual": "ErrorCode.INVALID_ARGUMENT", "verdict": "PASS"},
+    {"http_status": "500-599", "expected": "INTERNAL (13)", "actual": "ErrorCode.INTERNAL", "verdict": "PASS"},
+    {"http_status": "其他", "expected": "UNKNOWN (2)", "actual": "ErrorCode.UNKNOWN", "verdict": "PASS"}
+  ],
+  "enhancements": [
+    {
+      "description": "Retry-After 传播：map_http_error_with_headers() 从 HTTP 429 响应头提取 Retry-After，设置 StatusMessage.retry_delay_seconds",
+      "compatibility": "NO_CONFLICT — 不违反任何 spec 要求，向后兼容"
+    },
+    {
+      "description": "扩展测试：新增 18 个边界测试覆盖 int64 全范围、base64 边缘情况、oneof 冲突场景、enum 未知值",
+      "compatibility": "NO_CONFLICT — 原有 5 个测试全部保留，所有断言与 spec 一致"
+    }
+  ],
+  "static_review_files": [
+    "/srv/jwteam_clone/shared/run_current/impl/bridge/translator.py",
+    "/srv/jwteam_clone/shared/run_current/impl/bridge/error_mapper.py",
+    "/srv/jwteam_clone/shared/run_current/impl/bridge/publisher.py",
+    "/srv/jwteam_clone/shared/run_current/impl/service_b/schema.py",
+    "/srv/jwteam_clone/shared/run_current/impl/service_b/consumer.py",
+    "/srv/jwteam_clone/shared/run_current/impl/tests/test_translation.py",
+    "/srv/jwteam_clone/shared/run_current/impl/tests/test_errors.py",
+    "/srv/jwteam_clone/shared/run_current/impl/tests/test_e2e.py"
+  ]
+}

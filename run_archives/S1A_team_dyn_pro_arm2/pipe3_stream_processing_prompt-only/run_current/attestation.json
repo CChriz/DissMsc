@@ -1,0 +1,58 @@
+{
+  "verdict": "PASS",
+  "pipeline": "PIPE3 — user_analytics stream processing pipeline",
+  "verified_by": ["fullstack1", "verifier1", "verifier2"],
+  "contributors": {
+    "fullstack1": "pytest execution, attestation.json authoring",
+    "verifier1": "end-to-end contract verification (producer→processor→sink full chain review)",
+    "verifier2": "code-level QA — byte encoding verification, format consistency check, static code review"
+  },
+  "timestamp": "2026-08-10T09:50:00+01:00",
+  "summary": "All 3 serialization mismatch bugs fixed. All 10 tests pass.",
+  "tests": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0
+  },
+  "bugs": {
+    "bug1_datetime_format": {
+      "status": "FIXED",
+      "file": "producer.py",
+      "change": "event.timestamp.isoformat() in serialize_event (L24)",
+      "tests": [
+        "test_serialized_timestamp_has_T_separator",
+        "test_serialized_timestamp_parseable_by_fromisoformat",
+        "test_processor_can_parse_producer_output"
+      ]
+    },
+    "bug2_envelope_wrapping": {
+      "status": "FIXED",
+      "file": "processor.py",
+      "change": "Emit bare object instead of {\"data\": ...} envelope (L56)",
+      "tests": [
+        "test_processed_output_is_bare_object",
+        "test_sink_can_load_processed"
+      ]
+    },
+    "bug3_encoding": {
+      "status": "FIXED",
+      "file": "processor.py",
+      "change": "encoding=\"latin-1\" → encoding=\"utf-8\" (L48)",
+      "tests": [
+        "test_non_ascii_roundtrip",
+        "test_euro_sign_preserved"
+      ]
+    }
+  },
+  "end_to_end": {
+    "test_full_pipeline": "PASSED",
+    "test_non_ascii_survives_pipeline": "PASSED",
+    "test_multiple_events_correct_count": "PASSED"
+  },
+  "spec_compliance": {
+    "requirement_1_datetime_iso8601": "SATISFIED",
+    "requirement_2_bare_objects_no_envelope": "SATISFIED",
+    "requirement_3_utf8_encoding": "SATISFIED",
+    "requirement_4_all_tests_pass": "SATISFIED"
+  }
+}

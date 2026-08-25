@@ -1,0 +1,77 @@
+{
+  "verifier": "verifier2",
+  "ts": "2026-08-23T16:54:30+01:00",
+  "overall": "pass",
+  "subtasks": {
+    "pipe3_stream_processing": {
+      "status": "pass",
+      "checks": {
+        "datetime_serialization_iso8601": {
+          "status": "pass",
+          "detail": "producer.py 的 _json_default() 对 datetime 返回 o.isoformat()，serialize_event() 通过 json.dumps(default=_json_default) 产出 ISO 8601 T 分隔格式（如 2023-11-14T22:13:20），processor 的 datetime.fromisoformat() 可正常解析。"
+        },
+        "envelope_stripping_bare_object": {
+          "status": "pass",
+          "detail": "processor.py 的 process_events() 直接 json.dumps(processed, ensure_ascii=False) 输出裸 payload 对象，无 {\"data\": ...} 包裹，sink 直接访问 event_id/timestamp 字段不会 KeyError。"
+        },
+        "encoding_utf8": {
+          "status": "pass",
+          "detail": "processor.py 输出 open(output_path, 'w', encoding='utf-8')，输入 open(input_path, 'r', encoding='utf-8')，且 ensure_ascii=False 保留非 ASCII 字符（Müller/café/€），与 sink.py 的 UTF-8 读取一致。"
+        },
+        "tests_pass": {
+          "status": "pass",
+          "detail": "tests/test_serialization.py 覆盖 Bug1/2/3 三组用例，tests/test_pipeline.py 覆盖端到端/非 ASCII 存活/多事件计数；executor2 报告 pytest tests/ 全绿 10 passed，静态审查逻辑与实现吻合。"
+        },
+        "sink_models_no_change_needed": {
+          "status": "pass",
+          "detail": "sink.py 期望裸对象 + UTF-8 + ISO 8601 与 processor 输出一致；models.py 无需改动。"
+        }
+      }
+    },
+    "lh5": {
+      "status": "pass",
+      "checks": {
+        "backup": {
+          "status": "pass",
+          "detail": "data/backup/ 存在 devices.csv 与 sensor_readings.csv 副本；step_backup 复制后逐文件 SHA-256 比对保证 byte-identical。"
+        },
+        "transform_format": {
+          "status": "pass",
+          "detail": "data/transformed/sensor_readings.jsonl 60 行、devices.jsonl 26 行，与源表记录数一致；类型保持（reading_id/device_id 为 int，value 为 float）。"
+        },
+        "validate_checksums": {
+          "status": "pass",
+          "detail": "checksums.json 含 source(2) 与 transformed(2)，全部为 64 字符十六进制 SHA-256。"
+        },
+        "load_new_store": {
+          "status": "pass",
+          "detail": "data/new_format/sensor_readings.jsonl 60 行、devices.jsonl 26 行，两文件均存在。"
+        },
+        "verify_counts": {
+          "status": "pass",
+          "detail": "verification_report.json 为 {\"source_count\": 60, \"dest_count\": 60, \"counts_match\": true}。"
+        },
+        "update_references": {
+          "status": "pass",
+          "detail": "sensor_readings.jsonl 中 device_id 全部落在 devices.jsonl 的 1..26 集合内，零孤儿引用。"
+        },
+        "required_output_files": {
+          "status": "pass",
+          "detail": "migration_log.jsonl、migration_report.json、checksums.json、verification_report.json、data/backup/、data/new_format/{sensor_readings,devices}.jsonl 均已生成。"
+        },
+        "migration_report": {
+          "status": "pass",
+          "detail": "migration_report.json status=success，steps_completed 含 6 步，total_steps=6，ts 为 ISO 8601。"
+        },
+        "rollback_logic": {
+          "status": "pass",
+          "detail": "run_rollback() 逆序回滚已完成步骤；各步 rollback 动作与 spec 一致（backup 删除目录、transform 清空 transformed、checksum 清除 manifest、load 截断 new_format、verify_counts 删除报告、update_references 从 backup 恢复）。"
+        },
+        "migration_log_events": {
+          "status": "pass",
+          "detail": "migration_log.jsonl 记录 migration/start、每步 start/completed 及 migration/success，顺序正确。"
+        }
+      }
+    }
+  }
+}

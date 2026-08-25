@@ -1,0 +1,141 @@
+{
+  "messages": [
+    {
+      "order": 0,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 10,
+      "send_seq": 4289,
+      "send_ts": 1786154846.885983,
+      "content": "团队启动。任务看板已就绪：\n\n- **plan**（已由 planner2 认领）：分析 spec/spec.md，产出实现方案，分发给 executor1（Bug 1+2）和 executor2（Bug 3）\n- **impl-queue**（阻塞中，等待 plan）：修复 queue.py 的 TOCTOU 和 ack/nack\n- **impl-priority**（阻塞中，等待 plan）：修复 priority.py 的类型不安全比较器\n- **verify-1 / verify-2**（阻塞中，等待实现）：独立验证并产出 attestation.json\n\nplanner2 请开始制定方案，完成后将计划分别发送给 executor1 和 executor2。其他成员请等待依赖任务完成后自动解锁。",
+      "content_len": 358
+    },
+    {
+      "order": 1,
+      "from": "cpool1",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 5,
+      "send_seq": 2820,
+      "send_ts": 1786154900.219083,
+      "content": "\n## Bug 1 + Bug 2 实现计划：queue.py 和 consumer.py 修复\n\n你是 Executor #1，请在 `/srv/jwteam_clone/shared/run_current/workspace` 下修改文件。只能修改 `mqueue/queue.py` 和 `mqueue/consumer.py`，不要动其他文件。\n\n---\n\n### Bug 1：TOCTOU capacity check（queue.py `put()` 方法）\n\n**问题**：`put()` 在锁外检查容量，然后不加锁地追加——两个线程可以同时通过容量检查，导致队列超过声明容量。\n\n**修复**：将容量检查和追加操作都放在 `self._lock` 内部，使它们成为一个原子操作。\n\n**具体修改 `mqueue/queue.py` 的 `put()`：**\n\n```python\ndef put(self, message: Any) -> None:\n    \"\"\"\n    Enqueue a task message.\n\n    Raises QueueFull if the queue is at capacity.\n    \"\"\"\n    with self._lock:                                    # ← 加锁\n        if len(self._queue) >= self._capacity:           # ← 原子检查\n            raise QueueFull(\n                f\"TaskQueue at capacity ({self._capacity})\"\n            )\n        self._queue.append(message)                      # ← 原子追加\n```\n\n注意：`self._lock` 已经存在于 `__init__` 中（`self._lock = threading.Lock()`），无需新增导入或新锁。\n\n---\n\n### Bug 2：Missing ack/nack pattern（queue.py + consumer.py）\n\n**问题**：`get()` 立即从队列中移除消息。如果消费者在 `get()` 之后、处理完成之前崩溃，消息永久丢失，无法重新投递。\n\n**修复策略**：\n- 添加一个「在途消息」字典，跟踪已分发但尚未确认的消息\n- `get()` 返回 `(message, receipt)` 元组，而非原始消息；队列为空时返回 `(None, None)`\n- `ack(receipt)` 确认处理成功，从在途字典中移除\n- `nack(receipt)` 表示处理失败（模拟崩溃），将消息重新放回队列\n\n---\n\n#### 步骤 1：修改 `queue.py`\n\n**A. 为类添加在途跟踪字典**\n\n在 `__init__` 中新增：\n```python\nimport uuid   # 新增导入（文件顶部）\n\ndef __init__(self, capacity: int = 500):\n    self._capacity = capacity\n    self._queue: deque = deque()\n    self._lock = threading.Lock()\n    self._in_flight: dict = {}   # 新增：receipt → message 映射\n```\n\n**B. 重写 `get()` 方法**\n\n替换现有的 `get()`：\n```python\ndef get(self) -> tuple:\n    \"\"\"\n    Dequeue and return (message, receipt), or (None, None) if empty.\n\n    The message is held in-flight until ack() or nack() is called.\n    \"\"\"\n    with self._lock:\n        if not self._queue:\n            return (None, None)\n        message = self._queue.popleft()\n        receipt = str(uuid.uuid4())\n        self._in_flight[receipt] = message\n        return (message, receipt)\n```\n\n**C. 新增 `ack()` 方法**\n\n```python\ndef ack(self, receipt: str) -> None:\n    \"\"\"\n    Acknowledge successful processing. Removes the message from in-flight.\n    \"\"\"\n    with self._lock:\n        if receipt in self._in_flight:\n            del self._in_flight[receipt]\n```\n\n**D. 新增 `nack()` 方法**\n\n```python\ndef nack(self, receipt: str) -> None:\n    \"\"\"\n    Negative-acknowledge (simulate crash). Re-queues the message for\n    re-delivery at the front of the queue to preserve ordering.\n    \"\"\"\n    with self._lock:\n        if receipt in self._in_flight:\n            message = self._in_flight.pop(receipt)\n            self._queue.appendleft(message)   # 放回队首，优先重新投递\n```\n\n**E. 更新 `size()` 和 `is_empty()`（可选，但推荐）**\n\n现有实现已正确——它们基于 `self._queue`，在途消息不计入（因为已从队列取出）。但为了让语义更清晰，可以保持原样不变。\n\n关键点：测试中 `is_empty()` 用于消费者轮询循环——当 get() 消息进入在途后，`is_empty()` 返回 True 是正确语义，消费者应该收到 `(None, None)` 并短暂休眠。\n\n---\n\n#### 步骤 2：修改 `consumer.py`\n\n更新 `TaskConsumer.run_once()` 以使用 ack/nack 模式：\n\n```python\ndef run_once(self) -> bool:\n    \"\"\"\n    Process one task from the queue using ack/nack pattern.\n\n    Returns True if a task was processed, False if the queue was empty.\n    \"\"\"\n    msg, receipt = self._queue.get()\n    if msg is None:\n        return False\n    try:\n        self._handler(msg)\n        self._queue.ack(receipt)\n        with self._lock:\n            self._processed.append(msg)\n    except Exception:\n        self._queue.nack(receipt)\n        raise\n    return True\n```\n\n说明：\n- `get()` 现在返回 `(message, receipt)` 元组，直接解包\n- 成功处理 → `ack(receipt)` 确认\n- 异常 → `nack(receipt)` 重新入队，然后重新抛出异常\n- `run_until_empty()` 无需修改，它依赖 `run_once()` 的返回值\n\n---\n\n### 测试兼容性说明\n\n测试文件已经为修复后的接口做好了准备：\n- `test_concurrent.py` 和 `test_message_loss.py` 中的消费者检查 `isinstance(result, tuple)` 并解包 `(msg, receipt)`\n- `test_single_thread.py` 中的单线程测试解包 `result[0] if isinstance(result, tuple) else result`\n- `test_crash_recovery.py` 检查 `hasattr(q, 'ack')` 和 `hasattr(q, 'nack')` 来检测 Bug 2 是否已修复\n- 所有测试预期 `get()` 在队列为空时返回 `(None, None)`\n\n---\n\n### 期望结果\n\n修复后运行 `pytest tests/`：\n- `test_concurrent.py::test_concurrent_no_message_loss` → PASS\n- `test_concurrent.py::test_capacity_never_exceeded` → PASS\n- `test_capacity.py` 全部测试 → PASS\n- `test_message_loss.py::test_zero_message_loss_10k` → PASS（如果 Bug 3 也已修复）\n- `test_crash_recovery.py` 全部测试 → PASS\n- `test_single_thread.py` 全部测试 → 继续 PASS（向后兼容）\n\n完成后，调用 `send_message` 通知 `verifier1` 和 `verifier2`（数组 `[\"verifier1\", \"verifier2\"]`），内容为：\"queue implementation is ready for verification\"。\n",
+      "content_len": 4466
+    },
+    {
+      "order": 2,
+      "from": "cpool1",
+      "to": "executor2",
+      "broadcast": false,
+      "recipients": [
+        "executor2"
+      ],
+      "delivered": true,
+      "from_turn": 5,
+      "send_seq": 2822,
+      "send_ts": 1786154900.219243,
+      "content": "\n## Bug 3 实现计划：priority.py 修复\n\n你是 Executor #2，请在 `/srv/jwteam_clone/shared/run_current/workspace` 下修改文件。只修改 `mqueue/priority.py`，不要动其他文件。\n\n---\n\n### Bug 3：类型不安全的 priority comparator\n\n**问题**：\n```python\n@dataclass(order=True)\nclass PriorityTask:\n    urgency: int     # 主排序键\n    message: Any     # BUG：被用作次排序键——当 payload 是 dict/list 时会 TypeError\n```\n\n当 `order=True` 时，dataclass 按字段顺序生成比较方法。两个 urgency 相等的任务会继续比较 `message`。如果 message 是 `{\"key\": \"value\"}` 或 `[1, 2, 3]` 这种不可比较类型，`heapq` 操作会在运行时抛出 `TypeError`。\n\n**修复策略**：在两个 urgency 字段之间插入一个 `seq`（序列号）整数字段作为确定性、类型安全的 tie-breaker，并将 `message` 从比较中排除。\n\n---\n\n### 具体修改 `mqueue/priority.py`\n\n将整个文件替换为以下内容：\n\n```python\n\"\"\"\nPriority-ordered task message wrapper.\n\nUses a dataclass with ordering so that tasks can be placed in a heap.\n\"\"\"\nfrom dataclasses import dataclass, field\nfrom typing import Any\n\n\n@dataclass(order=True)\nclass PriorityTask:\n    \"\"\"Lower urgency number = higher priority (0=critical, 9=low)\n\n    Comparison order:\n     1. urgency (primary sort key — lower = higher priority)\n     2. seq     (tie-breaker — insertion order, deterministic & type-safe)\n     3. message is excluded from comparison entirely (compare=False)\n    \"\"\"\n    urgency: int                    # Primary sort key\n    seq: int                        # Tie-breaker: insertion sequence number\n    message: Any = field(compare=False)   # Payload — never compared\n```\n\n### 关键变更说明\n\n1. **新增 `seq: int` 字段**：插入在 `urgency` 和 `message` 之间。dataclass 的 `order=True` 按字段声明顺序生成比较方法，所以比较顺序变为：urgency → seq → （跳过 message，因为 compare=False）\n\n2. **`message: Any = field(compare=False)`**：显式将 message 从比较元组中排除。无论 payload 是什么类型（dict、list、set、自定义对象），都不会被比较。\n\n3. **导入变更**：`from dataclasses import dataclass, field`（新增 `field`）\n\n4. **seq 由调用者传入**：测试文件 `test_ordering.py` 已经这样调用：\n   ```python\n   def _make_item(prio, seq, msg):\n       try:\n           return _PRIO_CLS(urgency=prio, seq=seq, message=msg)\n       except TypeError:\n           return _PRIO_CLS(urgency=prio, message=msg)\n   ```\n   所以 seq 作为第二个位置参数传入，与新增字段完美匹配。\n\n---\n\n### 测试兼容性\n\n- `test_ordering.py` 的 `_make_item()` 助手函数已同时兼容旧版（2 字段）和新版（3 字段）签名——它会先尝试传入 `urgency`、`seq`、`message` 三个参数\n- 所有优先级排序测试预期：低 urgency 值先出队；等 urgency 任务不抛 TypeError\n\n### 期望结果\n\n- `test_ordering.py::test_higher_priority_comes_first` → PASS\n- `test_ordering.py::test_equal_priority_no_type_error_with_dict_payload` → PASS（不再抛 TypeError）\n- `test_ordering.py::test_equal_priority_no_type_error_with_list_payload` → PASS（不再抛 TypeError）\n\n完成后，调用 `send_message` 通知 `verifier1` 和 `verifier2`（数组 `[\"verifier1\", \"verifier2\"]`），内容为：\"priority fix is ready for verification\"。\n",
+      "content_len": 2600
+    },
+    {
+      "order": 3,
+      "from": "cpool1",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 6,
+      "send_seq": 3098,
+      "send_ts": 1786154913.067142,
+      "content": "实现方案已全部制定并分发完成：\n\n1. **Bug 1 + Bug 2 方案** → 已发送给 **executor1**\n   - Bug 1（TOCTOU）：将 `put()` 的容量检查和追加操作都放入 `self._lock` 临界区\n   - Bug 2（ack/nack）：队列新增 `_in_flight` 在途跟踪字典，`get()` 返回 `(msg, receipt)` 元组，新增 `ack(receipt)` 和 `nack(receipt)` 方法\n   - 消费者 `consumer.py` 更新为 try/ack/except/nack 模式\n\n2. **Bug 3 方案** → 已发送给 **executor2**\n   - `PriorityTask` 新增 `seq: int` tie-breaker 字段（插入在 urgency 和 message 之间）\n   - `message` 标记为 `field(compare=False)` 排除出比较，彻底消除 TypeError\n\n每条消息都包含完整的代码级实现细节和测试兼容性说明，executor1 和 executor2 可以直接开始实现。\n\n目前 impl-queue 和 impl-priority 仍为 blocked 状态，需等待 plan 任务标记完成才能解锁。请确认是否需要协调 task 状态流转。\n",
+      "content_len": 609
+    },
+    {
+      "order": 4,
+      "from": "team_leader",
+      "to": "planner1",
+      "broadcast": false,
+      "recipients": [
+        "planner1"
+      ],
+      "delivered": true,
+      "from_turn": 14,
+      "send_seq": 4929,
+      "send_ts": 1786154922.434737,
+      "content": "方案已收到并分发完毕。请调用 claim_task(status=completed) 将 #plan 任务标记为完成，这样 impl-queue 和 impl-priority 会自动解锁为 pending 状态。",
+      "content_len": 108
+    },
+    {
+      "order": 5,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 10,
+      "send_seq": 2654,
+      "send_ts": 1786154934.788914,
+      "content": "## Bug 1 + Bug 2 修复方案：queue.py 和 consumer.py\n\n请修改以下两个文件（均在 `/srv/jwteam_clone/shared/run_current/workspace/mqueue/` 下）：\n\n---\n\n### 一、queue.py — 完整替换\n\n你需要重写 `TaskQueue` 类，同时修复 Bug 1（TOCTOU）和 Bug 2（缺少 ack/nack 模式）。\n\n**Bug 1 修复 — `put()` 原子化：**\n将 `put()` 中的容量检查和 append 放在同一个 `self._lock` 临界区内：\n\n```python\ndef put(self, message: Any) -> None:\n    with self._lock:\n        if len(self._queue) >= self._capacity:\n            raise QueueFull(f\"TaskQueue at capacity ({self._capacity})\")\n        self._queue.append(message)\n```\n\n**Bug 2 修复 — ack/nack 确认模式：**\n\n新增成员变量：\n- `self._in_flight: dict` — 键为 receipt（UUID 字符串），值为 message。追踪已分发给消费者但尚未 ack/nack 的消息。\n\n修改 `get()`：\n- 加锁，从 `self._queue` 头部 popleft\n- 生成 receipt（`str(uuid.uuid4())`）\n- 将 `receipt -> message` 存入 `self._in_flight`\n- 返回 `(message, receipt)` 元组\n- 空队列时返回 `(None, None)`\n\n新增 `ack(receipt)`：\n- 加锁，从 `self._in_flight` 中删除该 receipt 键\n- 若 receipt 不存在则静默忽略（幂等性）\n\n新增 `nack(receipt)`：\n- 加锁，从 `self._in_flight` 中取出消息（并删除键）\n- 将消息**重新放回队列头部**（`self._queue.appendleft(msg)`），保证优先重试\n- 若 receipt 不存在则静默忽略\n\n修改 `size()`、`is_empty()`、`is_full()`：\n- `size()` → `len(self._queue) + len(self._in_flight)`（逻辑队列大小 = 等待中 + 飞行中）\n- `is_empty()` → `len(self._queue) == 0 and len(self._in_flight) == 0`\n- `is_full()` → `len(self._queue) + len(self._in_flight) >= self._capacity`（加锁保护）\n\n**关键约束：所有公共方法加锁保护。** `put`、`get`、`ack`、`nack`、`size`、`is_empty`、`is_full` 都要用 `with self._lock:`。\n\n已有的 `QueueFull`、`QueueEmpty` 异常类和 `__init__` 中的 `self._capacity`、`self._queue: deque`、`self._lock` 保留不变（仅追加 `self._in_flight`）。\n\n---\n\n### 二、consumer.py — `run_once()` 方法改造\n\n修改 `run_once()` 方法以适配新的 ack/nack 模式：\n\n```python\ndef run_once(self) -> bool:\n    result = self._queue.get()\n    if isinstance(result, tuple):\n        msg, receipt = result\n        if msg is None:\n            return False\n        try:\n            self._handler(msg)\n            if hasattr(self._queue, 'ack') and receipt is not None:\n                self._queue.ack(receipt)\n        except Exception:\n            if hasattr(self._queue, 'nack') and receipt is not None:\n                self._queue.nack(receipt)\n            raise\n    else:\n        # 向后兼容旧版 get() 返回单个值\n        msg = result\n        if msg is None:\n            return False\n        self._handler(msg)\n    \n    with self._lock:\n        self._processed.append(msg)\n    return True\n```\n\n其余代码（`__init__`、`run_until_empty`、`processed_count`、`processed_messages`）保持不变。\n\n---\n\n### 测试验证\n\n完成修改后，使用 `pytest tests/ -v` 验证。关键测试包括：\n- `test_concurrent_no_message_loss` — 零消息丢失\n- `test_capacity_never_exceeded` / `test_capacity_not_exceeded_*` — 容量永不超限\n- `test_nack_requeues_message` / `test_acked_message_not_redelivered` / `test_multiple_in_flight_nack_all` — ack/nack 正确性\n- `test_single_thread.py` 中的全部测试 — 单线程向后兼容\n\n完成后请 send_message 通知 verifier1 和 verifier2。",
+      "content_len": 2795
+    },
+    {
+      "order": 6,
+      "from": "cpool2",
+      "to": "executor2",
+      "broadcast": false,
+      "recipients": [
+        "executor2"
+      ],
+      "delivered": true,
+      "from_turn": 10,
+      "send_seq": 2656,
+      "send_ts": 1786154934.789046,
+      "content": "## Bug 3 修复方案：priority.py — 类型安全的优先级比较器\n\n请修改 `/srv/jwteam_clone/shared/run_current/workspace/mqueue/priority.py`。\n\n---\n\n### 问题分析\n\n当前 `PriorityTask` 使用 `@dataclass(order=True)`，当两个任务 urgency 相等时，Python 的 dataclass 排序会回退到比较 `message` 字段。如果 payload 是 dict、list 或其他不可比较的类型（如 `{\"task_id\": 1}`），会抛出 `TypeError`，导致优先级堆崩溃。\n\n### 修复方案\n\n引入一个 `seq`（序列号）字段作为稳定的 tie-breaker，并将 `message` 字段排除在比较之外：\n\n```python\nfrom dataclasses import dataclass, field\nfrom typing import Any\n\n\n@dataclass(order=True)\nclass PriorityTask:\n    \"\"\"Lower urgency number = higher priority (0=critical, 9=low)\n    \n    Uses `seq` as a stable tie-breaker for equal-urgency tasks.\n    The `message` field is excluded from comparison to avoid TypeError\n    when payloads are dicts, lists, or other non-comparable types.\n    \"\"\"\n    urgency: int                     # Primary sort key\n    seq: int = field(compare=True)   # Stable tie-breaker (insertion order)\n    message: Any = field(compare=False)  # Payload — excluded from comparison\n```\n\n**关键点：**\n1. `seq: int` 作为第二排序键，`field(compare=True)` — urgency 相同时按 seq 比较\n2. `message: Any = field(compare=False)` — 完全排除在排序比较之外\n3. `order=True` 生成的比较方法：先比 `urgency`，相同则比 `seq`，绝不动 `message`\n\n---\n\n### 测试对齐\n\n测试文件 `tests/test_ordering.py` 中的 `_make_item` 辅助函数已经预期三字段形式：\n```python\ndef _make_item(prio, seq, msg):\n    return _PRIO_CLS(urgency=prio, seq=seq, message=msg)\n```\n\n测试覆盖：\n- `test_higher_priority_comes_first` — 低 urgency 先出队\n- `test_equal_priority_no_type_error_with_dict_payload` — 等 urgency + dict payload 不抛 TypeError\n- `test_equal_priority_no_type_error_with_list_payload` — 等 urgency + list payload 不抛 TypeError\n\n---\n\n### 验证\n\n完成后用 `pytest tests/test_ordering.py -v` 验证。\n\n完成后请 send_message 通知 verifier1 和 verifier2。",
+      "content_len": 1727
+    },
+    {
+      "order": 7,
+      "from": "cpool2",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 11,
+      "send_seq": 2781,
+      "send_ts": 1786154945.315136,
+      "content": "实现方案已完成并分发。当前进度摘要：\n\n**已完成（planner2）：**\n- ✅ 完整阅读 spec/spec.md、全部源码（queue.py / priority.py / consumer.py / producer.py / config.py）和全部测试文件\n- ✅ Bug 1+2 详细方案已发送至 executor1：queue.py TOCTOU 原子化 + ack/nack 确认模式\n- ✅ Bug 3 详细方案已发送至 executor2：priority.py seq tie-breaker + message 排除比较\n\n**进行中：**\n- 🔧 executor1 已认领 impl-queue（Bug 1+2 queue.py + consumer.py）\n- 🔧 executor2 已认领 impl-priority（Bug 3 priority.py）\n\n**阻塞中：**\n- ⏳ verify-1 / verify-2 等待实现完成后解锁\n\n方案要点：\n- Bug 1: put() 中 lock 保护整个 check+append 为原子操作\n- Bug 2: get() 返回 (msg, receipt)；新增 ack(receipt)/nack(receipt)；size/is_empty/is_full 计入 in-flight 消息\n- Bug 3: 新增 seq 字段作 tie-breaker，message 字段 compare=False 避免 TypeError",
+      "content_len": 665
+    },
+    {
+      "order": 8,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 30,
+      "send_seq": 6724,
+      "send_ts": 1786155237.098839,
+      "content": "## 🎯 本轮工作总结：消息队列竞态条件修复\n\n全部 5 个任务已完成，双盲独立验证一致 PASS。\n\n### 修复内容\n\n| Bug | 描述 | 修复方案 | 执行者 |\n|-----|------|----------|--------|\n| **Bug 1** TOCTOU capacity check | put() 容量检查与追加之间存在时间窗口 | 将检查+追加整体放入 `self._lock` 临界区 | executor1 |\n| **Bug 2** Missing ack pattern | get() 立即删除消息，消费失败时丢失 | 引入 `_in_flight` 在途跟踪，get() 返回 `(msg, receipt)` 元组，新增 `ack()`/`nack()` | executor1 |\n| **Bug 3** Type-unsafe comparator | 不同类型 payload 比较抛出 TypeError | 新增 `seq: int` tie-breaker，`message` 设 `field(compare=False)` 排除比较 | executor2 |\n\n### 验证结果\n\n- **verifier1 (verifier1)**: PASS — 5/5 需求全部通过\n- **verifier2 (verifier2)**: PASS — 5/5 需求全部通过\n- **pytest tests/**: 17 passed in 1.68s（6 个测试模块全部通过）\n- **attestation.json**: 已写入 `/srv/jwteam_clone/shared/run_current/attestation.json`\n\n### 团队协作\n\nplanner1 + planner2 独立制定方案 → executor1/executor2 并行实施 → verifier1/verifier2 双盲验证，全部一次通过。\n\n---\n\n团队保持运行，等待新任务指令。有新的需求随时提出。\n",
+      "content_len": 887
+    }
+  ]
+}

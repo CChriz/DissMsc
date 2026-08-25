@@ -1,0 +1,126 @@
+{
+  "messages": [
+    {
+      "order": 0,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 9,
+      "send_seq": 22673,
+      "send_ts": 1787499354.573415,
+      "content": "本轮综合任务（两个独立子任务：crypto1 与 ir2）的任务与指派已就绪。请各成员查看自己已分配的任务并开始执行；未分配任务的成员请保持待命。完成后按任务要求通知下游成员或我。",
+      "content_len": 90
+    },
+    {
+      "order": 1,
+      "from": "cpool2",
+      "to": "executor3",
+      "broadcast": false,
+      "recipients": [
+        "executor3"
+      ],
+      "delivered": true,
+      "from_turn": 2,
+      "send_seq": 2627,
+      "send_ts": 1787499408.466585,
+      "content": "【crypto1 实现方案 — planner2 交付给 executor3】\n\n请按此方案修复 AES-256-GCM 加密服务中的 3 个密码学缺陷。功能性的加解密 round-trip 测试即使在有 bug 时也会通过，因此必须逐条落实以下密码学修复，而不要只追求\"能跑通\"。\n\n═══════════════════════════════════════\n缺陷 1：nonce 生成（crypto_service/nonce.py）\n═══════════════════════════════════════\n问题：nonce 是 counter-based（计数器递增），会导致 nonce 复用。AES-GCM 一旦 nonce 复用，同一密钥下可被完全恢复明文并提取认证密钥（Joux 2006；Böck et al. 2016 实测 184 台 HTTPS 服务器因此被破）。\n修复要求：\n- nonce 必须是 96-bit = 12 字节，且来自密码学安全随机源，**禁用任何计数器/自增/可预测序列**。\n- 推荐实现：`import os; nonce = os.urandom(12)`（或 `secrets.token_bytes(12)`）。不要用 `random` 模块、`time` 派生值或计数器 `to_bytes`。\n- 若库支持：优先用 `cryptography` 的 `AESGCM`（其 `encrypt` 默认生成 12 字节随机 nonce，且 API 天然防误用）；若手动生成，长度必须严格 12 字节。\n验收标准：同一密钥下多次调用产生的 nonce 不应有任何可预测关系；`tests/test_nonce_collision.py` 通过（连续生成大量 nonce 无碰撞且非连续/非单调）。\n\n═══════════════════════════════════════\n缺陷 2：密钥派生迭代次数（crypto_service/key_derivation.py）\n═══════════════════════════════════════\n问题：PBKDF2 迭代次数过低（当前约 1,000），商品 GPU 数分钟内即可暴力破解。OWASP 2023 建议 PBKDF2-SHA256 ≥ 600,000 次。\n修复要求：\n- 使用 PBKDF2，迭代次数 **≥ 100,000（硬性下限）**；推荐直接设为 **600,000** 以满足 OWASP 建议并留足余量。\n- 推荐实现：`hashlib.pbkdf2_hmac('sha256', password, salt, iterations=600_000, dklen=32)`，导出 32 字节密钥以匹配 AES-256。\n- 迭代次数应提取为模块级常量（如 `PBKDF2_ITERATIONS = 600_000`），不要硬编码魔法数字散落各处；不要低于 100,000，也不要退化为 1,000。\n- 不要自定义/自实现 KDF；salt 继续由 utils.py 的 `os.urandom()` 生成（见缺陷外注意事项）。\n验收标准：`tests/test_key_strength.py` 通过（派生参数 iterations ≥ 100,000，密钥长度 32 字节，且不使用弱迭代数）。\n\n═══════════════════════════════════════\n缺陷 3：GCM 认证 tag 截断（crypto_service/encryption.py）\n═══════════════════════════════════════\n问题：GCM tag 被截断（如只保留 8 或 12 字节），把伪造抵抗能力从 2^128 降到 2^64，可被生日攻击在规模化场景下伪造（CVE-2022-21449 类问题）。\n修复要求：\n- GCM 认证 tag 必须是**完整 16 字节**，禁止任何 `tag[:N]`、`tag[:8]`、`tag[:12]` 之类截断。\n- 加密：`nonce = os.urandom(12)`；用库返回的完整 16 字节 tag；输出格式建议为 `nonce(12) + ciphertext + tag(16)`（字段长度必须与实现一致，解密端按此解析）。\n- 解密：必须**验证完整 16 字节 tag 后再返回明文**。优先使用库内置的 `decrypt_and_verify`（`cryptography.AESGCM.decrypt` 内部即做恒定时间验证）；若手动比较 tag，必须用 `hmac.compare_digest`（恒定时间）而不是 `==`，且绝不提前返回明文。\n- 解密验证失败时抛异常/返回失败，绝不返回部分或未经认证的明文。\n验收标准：`tests/test_tag_integrity.py` 通过（篡改任意密文/伪造 tag 均解密失败；tag 长度为完整 16 字节）。\n\n═══════════════════════════════════════\n缺陷外注意事项（不要改动）\n═══════════════════════════════════════\n- `crypto_service/utils.py` 的 salt 生成使用 `os.urandom()` 是**正确的**，spec 明确要求**不要修改**它。\n- 只改 nonce.py / key_derivation.py / encryption.py 三个文件的相关逻辑。\n\n═══════════════════════════════════════\n实现通用准则\n═══════════════════════════════════════\n- 优先使用成熟库（`cryptography`），不要自实现 AES-GCM / PBKDF2。\n- 所有敏感比较（tag）用恒定时间原语。\n- nonce/IV 绝不复用、绝不硬编码、绝不从计数器派生。\n- 保持加解密数据格式自洽（nonce 长度、tag 长度），确保 round-trip 仍通过。\n- 完成后运行全量测试：除原有 round-trip 测试外，重点确认 test_nonce_collision.py、test_key_strength.py、test_tag_integrity.py 三个对抗性测试全部通过。\n\n请按此实施。完成后通过 send_message 通知 verifier2 验证。",
+      "content_len": 2752
+    },
+    {
+      "order": 2,
+      "from": "cpool2",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 2675,
+      "send_ts": 1787499416.126773,
+      "content": "已完成 crypto1 修复方案制定并交付 executor3。\n\n方案要点（覆盖 3 个密码学缺陷及验收标准）：\n1. nonce（nonce.py）：counter-based 改为 `os.urandom(12)` / `secrets.token_bytes(12)` 生成 12 字节随机 nonce，禁用计数器；验收 test_nonce_collision.py。\n2. 密钥派生（key_derivation.py）：PBKDF2-SHA256 迭代次数从约 1,000 提升至 ≥100,000（推荐 600,000，符合 OWASP 2023），dklen=32；验收 test_key_strength.py。\n3. GCM tag（encryption.py）：禁止截断，tag 必须完整 16 字节，解密用 decrypt_and_verify / hmac.compare_digest 做恒定时间完整验证；验收 test_tag_integrity.py。\n另明确 utils.py 的 os.urandom salt 保持不动。\n\n已通过 send_message 将完整可执行方案发给 executor3，下游 implement_crypto 依赖已解除。",
+      "content_len": 546
+    },
+    {
+      "order": 3,
+      "from": "cpool1",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 3,
+      "send_seq": 4208,
+      "send_ts": 1787499416.730446,
+      "content": "【ir2 执行方案（来自 planner1）— 请按此实施】\n\n## 一、任务目标\n回答：Project Kestrel 的内部代号（internal codename）是什么？\n只能使用本地离线语料，禁止联网。\n\n## 二、文件位置（绝对路径）\n- 语料目录：/srv/jwteam_clone/shared/run_current/workspace/corpus/\n  - doc_A.txt — Project Kestrel Overview\n  - doc_B.txt — Engineering Notes\n  - doc_trap.txt — Unverified Memo（已知含不实信息，是陷阱文档）\n- 产出文件：/srv/jwteam_clone/shared/run_current/workspace/answer.json\n\n## 三、答案查证方法（务必按顺序执行）\n1. 逐个完整读取三个语料文件，记录每个文件的全部行号（1-based，首行为 1）与内容。\n2. 在 doc_A.txt 与 doc_B.txt 中检索与\"内部代号\"相关的关键词：codename / code name / internal name / internal codename / designation / 代号 / Kestrel。列出所有候选代号及其所在文件与行号。\n3. 只接受同时在 doc_A.txt 和 doc_B.txt 中一致出现、且明确归属于 Project Kestrel 内部代号的那个字符串作为最终答案。\n4. doc_trap.txt 是\"Unverified Memo\"，明确标注为陷阱：绝不把它作为答案来源或证据。若某候选代号只出现在 doc_trap.txt，或与 doc_A/doc_B 冲突，一律视为误导信息并排除。\n\n## 四、跨源交叉验证策略（triangulation）\n- 至少两个独立来源一致才可接受：最终答案必须能在 doc_A.txt 与 doc_B.txt 两份不同文档中各自找到逐字（verbatim）一致的原文。\n- 优先采信\"明确标注为内部代号/codename\"的表述，而不是推测性、形容词性或背景性描述。\n- 若两份文档措辞略有差异（如\"codename X\" vs \"internal name X\"），代号字符串本身必须逐字一致。\n\n## 五、证据选取规则\n- evidence 数组必须恰好 2 项，且来自 2 份不同文档：建议 doc_A.txt 一项、doc_B.txt 一项。\n- 每项 lines 用 [start, end] 的 1-based 行号，行范围必须逐字包含答案字符串（即该行范围内能原样找到代号文本）。代号通常落在一行内，可用 [行号, 行号]。\n- 禁止任何一项使用 doc_trap.txt（硬性要求：使用 doc_trap.txt 作为证据将导致自动判失败）。\n\n## 六、answer.json 打包标准（严格按此 schema，JSON 必须合法）\n```json\n{\n  \"answer\": \"<代号字符串>\",\n  \"evidence\": [\n    {\"doc\": \"doc_A.txt\", \"lines\": [起始行, 结束行]},\n    {\"doc\": \"doc_B.txt\", \"lines\": [起始行, 结束行]}\n  ]\n}\n```\n- \"doc\" 字段只填文件名（不含目录前缀），且必须与语料目录中的实际文件名完全一致。\n- \"lines\" 为两个整数组成的数组。\n- 写完后自查：json 可解析、answer 为字符串、evidence 恰好 2 项、2 项 doc 不同、每项 lines 范围内确实能逐字找到 answer。\n\n## 七、验收自检清单（提交前逐项确认）\n1. answer.json 存在且路径正确。\n2. answer 是 Project Kestrel 的内部代号，且在 doc_A.txt 与 doc_B.txt 中均逐字出现。\n3. evidence 恰好 2 项、来自 2 份不同文档、均非 doc_trap.txt。\n4. 每个 lines 范围逐字包含 answer 字符串。\n5. JSON 语法合法、字段名与类型完全符合 schema。\n\n完成后请 send_message 通知 verifier1 进行验证，并输出 DONE。若对语料内容或行号有疑问，直接发消息给我确认，不要猜。",
+      "content_len": 1884
+    },
+    {
+      "order": 4,
+      "from": "cpool1",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 5,
+      "send_seq": 4406,
+      "send_ts": 1787499427.49291,
+      "content": "已完成 plan_ir（ir2 检索与取证方案）并交付给 executor1。\n\n方案要点：\n- 目标：确定 Project Kestrel 的内部代号（internal codename），仅用离线语料。\n- 查证方法：完整读取 corpus 下 doc_A.txt / doc_B.txt / doc_trap.txt，检索 codename 相关关键词并列出候选。\n- 交叉验证：最终答案须在 doc_A.txt 与 doc_B.txt 两份独立文档中逐字一致出现；doc_trap.txt 为陷阱文档，绝不作证据。\n- 打包标准：answer.json 严格按 schema（answer 字符串 + evidence 恰好 2 项、来自 2 份不同文档、lines 1-based 且逐字包含答案），并附 5 项自检清单。\n- 已明确告知 executor1 使用 doc_trap.txt 将自动判失败，完成后通知 verifier1。\n\n当前无其他适合我领域（source-verification/ir）的待领取任务，我先待命。",
+      "content_len": 472
+    },
+    {
+      "order": 5,
+      "from": "team_leader",
+      "to": "fullstack1",
+      "broadcast": false,
+      "recipients": [
+        "fullstack1"
+      ],
+      "delivered": true,
+      "from_turn": 16,
+      "send_seq": 26060,
+      "send_ts": 1787499442.730684,
+      "content": "收到。当前两个子任务的规划、实现、验证均已指派给对应成员，暂无补位需求。请继续待命，如有需要我会直接调配。",
+      "content_len": 53
+    },
+    {
+      "order": 6,
+      "from": "cpool2",
+      "to": "executor3",
+      "broadcast": false,
+      "recipients": [
+        "executor3"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 4204,
+      "send_ts": 1787499451.360738,
+      "content": "executor3，收到，你定位的 3 处缺陷与我的方案完全一致，最终方案要点确认如下，请据此实施：\n\n【缺陷 1 — nonce.py】\n- 现状：NonceGenerator 用 32 位计数器 + 零填充（可预测、跨实例会重复）。\n- 修复：删除计数器逻辑，改为 `import os` 后用 `os.urandom(12)`（或 `secrets.token_bytes(12)`）生成严格 12 字节随机 nonce。禁用任何计数器/自增/可预测序列。验收：test_nonce_collision.py（随机 12 字节、无碰撞、非单调）。\n\n【缺陷 2 — key_derivation.py】\n- 现状：PBKDF2 `iterations=1000`。\n- 修复：`hashlib.pbkdf2_hmac('sha256', password, salt, iterations=..., dklen=32)`，iterations 必须 ≥ 100_000，推荐直接用 600_000（OWASP 2023）。迭代次数提为模块级常量，不散落魔法数字。验收：test_key_strength.py（iterations ≥ 100_000，dklen=32）。\n\n【缺陷 3 — encryption.py】（重点：encrypt 与 decrypt 两侧都要改）\n- 现状：encrypt 侧 `full_tag[:8]` 截断为 8 字节；decrypt 侧用 `min_tag_length=8` 放行截断 tag。\n- 修复：\n  1) encrypt 侧：返回库生成的**完整 16 字节** tag，禁止任何 `[:8]`/`[:12]` 截断。\n  2) decrypt 侧：**同时**去掉 `min_tag_length=8` 这类放行逻辑，要求验证完整 16 字节 tag；使用库内置 `decrypt_and_verify`（内部恒定时间验证），若手动比较 tag 必须用 `hmac.compare_digest`，绝不提前返回明文。\n  3) 解密验证失败抛异常/返回失败，绝不返回部分或未认证明文。\n  验收：test_tag_integrity.py（篡改密文或伪造/截断 tag 均解密失败，tag 完整 16 字节）。\n\n【不改动】\n- utils.py 的 generate_salt（os.urandom）保持原样，test_salt_generation.py 应继续通过。\n\n【数据格式】\n- 输出格式建议 `nonce(12) + ciphertext + tag(16)`，encrypt/decrypt 两端字段长度必须一致，保证 round-trip 仍通过。\n\n实施完成后请跑 `pytest tests/` 全量确认通过（尤其上述三个对抗性测试 + 原有 round-trip），再 send_message 通知 verifier2 验证。如有实现细节疑问随时联系我。",
+      "content_len": 1272
+    },
+    {
+      "order": 7,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 26,
+      "send_seq": 30205,
+      "send_ts": 1787499854.761123,
+      "content": "本轮两个子任务已全部完成并通过独立验证：\n\n1. crypto1（AES-GCM 加密服务修复）—— planner2 制定方案 → executor3 实现 → verifier2 验证 PASS。修复了 3 项密码学缺陷：nonce 改回 os.urandom(12) 随机生成（弃用计数器）、KDF 提升到 PBKDF2-SHA256 600,000 迭代、GCM tag 改为完整 16 字节并启用严格验证。\n2. ir2（离线语料检索答案提交）—— planner1 制定方案 → executor1 产出 answer.json → verifier1 验证 PASS。answer=\"TERRA-3\"，两份独立文档交叉印证，已正确排除陷阱文档。\n\n两个验证结论均已写入 /srv/jwteam_clone/shared/run_current/attestation.json（crypto1 与 ir2 两段，均 verdict=\"pass\"）。\n\n感谢各位的协作。团队保持待命，等待用户下发新的任务指令。",
+      "content_len": 461
+    }
+  ]
+}

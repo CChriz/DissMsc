@@ -1,0 +1,126 @@
+{
+  "verifier": "verifier1",
+  "timestamp": "2026-08-08T22:06:00+01:00",
+  "implementation": "/srv/jwteam_clone/shared/run_current/workspace/protocol.py",
+  "test_results": "15/15 passed",
+  "requirements": {
+    "MUST": {
+      "M1": {
+        "description": "SET <key> <value> stores value",
+        "status": "PASS",
+        "evidence": "_cmd_set() stores in self._data[key]=value (line 95); dispatch at execute() line 45-46; test_set_returns_ok PASSED"
+      },
+      "M2": {
+        "description": "GET <key> returns value or ERR key_not_found",
+        "status": "PASS",
+        "evidence": "_cmd_get() returns self._data[key] or 'ERR key_not_found' (lines 100-105); expiry check via _is_expired; tests test_get_existing_key & test_get_missing_key PASSED"
+      },
+      "M3": {
+        "description": "DEL <key> removes key, ERR key_not_found if missing",
+        "status": "PASS",
+        "evidence": "_cmd_del() deletes key and returns 'OK', or returns 'ERR key_not_found' (lines 107-114); test_del_existing_key PASSED"
+      },
+      "M4": {
+        "description": "KEYS lists all keys one per line, terminated by END",
+        "status": "PASS",
+        "evidence": "_cmd_keys() joins keys with newline and appends END (lines 116-122); empty store returns just 'END'; test_keys_lists_all PASSED"
+      },
+      "M5": {
+        "description": "COUNT returns COUNT <n>",
+        "status": "PASS",
+        "evidence": "_cmd_count() returns f'COUNT {len(self._data)}' (lines 124-127); test_count_after_sets PASSED"
+      },
+      "M6": {
+        "description": "EXISTS <key> returns TRUE/FALSE",
+        "status": "PASS",
+        "evidence": "_cmd_exists() returns 'TRUE' or 'FALSE' (lines 129-132); tests test_exists_true & test_exists_false PASSED"
+      },
+      "M7": {
+        "description": "FLUSH removes all keys, returns OK",
+        "status": "PASS",
+        "evidence": "_cmd_flush() clears self._data and self._expiry, returns 'OK' (lines 134-138); test_flush_clears_store PASSED"
+      },
+      "M8": {
+        "description": "OK for successful SET and DEL",
+        "status": "PASS",
+        "evidence": "_cmd_set() returns 'OK' at line 98; _cmd_del() returns 'OK' at line 113; tests test_set_returns_ok & test_del_existing_key both assert 'OK' in response"
+      },
+      "M9": {
+        "description": "ERR unknown_command for unrecognized commands",
+        "status": "PASS",
+        "evidence": "execute() returns 'ERR unknown_command' at lines 40 and 66 for empty and unrecognized input; test_unknown_command PASSED"
+      },
+      "M10": {
+        "description": "Max key length (64), reject with ERR key_too_long",
+        "status": "PASS",
+        "evidence": "_cmd_set() checks len(key) > MAX_KEY_LENGTH(64) at line 88-89; also enforced in _cmd_append and _cmd_setex; test_key_too_long PASSED"
+      },
+      "M11": {
+        "description": "Max value size (1024), reject with ERR value_too_large",
+        "status": "PASS",
+        "evidence": "_cmd_set() checks len(value) > MAX_VALUE_SIZE(1024) at line 90-91; also enforced in _cmd_append and _cmd_setex; test_value_too_large PASSED"
+      },
+      "M12": {
+        "description": "Max keys (100), reject with ERR store_full (except update)",
+        "status": "PASS",
+        "evidence": "_cmd_set() checks key not in data and len(data) >= MAX_KEYS(100) at line 92-93; also enforced in _cmd_append and _cmd_setex; tests test_store_full & test_store_full_allows_update PASSED"
+      }
+    },
+    "SHOULD": {
+      "S3": {
+        "description": "TTL <key> returns remaining seconds, -1 (no expiry), or ERR key_not_found",
+        "status": "PASS",
+        "evidence": "_cmd_ttl() at lines 164-172: returns int(remaining) for expiring keys, '-1' for permanent keys, 'ERR key_not_found' for missing; uses max(0, remaining) for edge case"
+      },
+      "S4": {
+        "description": "SETEX <key> <seconds> <value> sets key with expiration",
+        "status": "PASS",
+        "evidence": "_cmd_setex() at lines 174-191: stores value and sets expiry timestamp via self._expiry[key]=time.time()+sec; expired keys treated as non-existent via _is_expired in GET/DEL/EXISTS/TTL; enforces all limit checks"
+      },
+      "S5": {
+        "description": "APPEND <key> <value> appends or creates, returns OK <new_length>",
+        "status": "PASS",
+        "evidence": "_cmd_append() at lines 142-162: appends to existing value or creates new key; returns f'OK {len(new_value)}'; enforces all limit checks; test_append_to_existing PASSED"
+      },
+      "S1": {
+        "description": "MSET — not implemented",
+        "status": "FAIL",
+        "evidence": "No MSET handler in execute() dispatch"
+      },
+      "S2": {
+        "description": "MGET — not implemented",
+        "status": "FAIL",
+        "evidence": "No MGET handler in execute() dispatch"
+      }
+    },
+    "MAY": {
+      "Y1": {
+        "description": "RENAME — not implemented (bonus)",
+        "status": "FAIL",
+        "evidence": "Not present in implementation"
+      },
+      "Y2": {
+        "description": "TYPE — not implemented (bonus)",
+        "status": "FAIL",
+        "evidence": "Not present in implementation"
+      },
+      "Y3": {
+        "description": "DUMP — not implemented (bonus)",
+        "status": "FAIL",
+        "evidence": "Not present in implementation"
+      }
+    }
+  },
+  "summary": {
+    "MUST_passed": 12,
+    "MUST_total": 12,
+    "SHOULD_passed": 3,
+    "SHOULD_total": 5,
+    "MAY_passed": 0,
+    "MAY_total": 3,
+    "score_formula": "(MUST/12 * 0.6) + (SHOULD/5 * 0.3) + (MAY/3 * 0.1)",
+    "score": 0.78,
+    "verdict": "PASS",
+    "notes": "All 12 MUST requirements satisfied; 3 of 5 SHOULD requirements (S3 TTL, S4 SETEX, S5 APPEND) implemented and passing; 0 MAY requirements. Minimum bar (12 MUST + >=3 SHOULD) met. Score: 78%."
+  }
+}

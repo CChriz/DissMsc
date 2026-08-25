@@ -1,0 +1,187 @@
+{
+  "team": "P5 联合任务组",
+  "overall_status": "BOTH_SUBTASKS_PASS",
+  "subtasks": {
+    "cross3": {
+      "verifier": "verifier1",
+      "task": "cross3-verify",
+      "title": "Subtask 1: cross3 — Protocol Bridge Fixes",
+      "verdict": "PASS",
+      "timestamp": "2026-08-08T14:03:00+01:00",
+      "method": "code-review",
+      "note": "验证通过代码审查完成。由于 verifier 权限边界限制（不可执行命令），未运行 `pytest tests/`，已逐项对照 spec.md 审查所有实现代码和测试逻辑。",
+      "bugs": [
+        {
+          "id": 1,
+          "title": "int64 truncation",
+          "requirement": "int64 fields must be translated as Python int (no truncation to 32-bit)",
+          "files": ["bridge/translator.py"],
+          "fix": "移除 & 0xFFFFFFFF 掩码，使用 int() 直接转换",
+          "tests": [
+            "tests/test_translation.py::test_int64_not_truncated",
+            "tests/test_translator.py::test_int64_within_32bit",
+            "tests/test_translator.py::test_int64_beyond_32bit"
+          ],
+          "verdict": "PASS",
+          "detail": "translate_event_streaming 中 event_id 和 occurred_at 均使用 int() 转换，无位掩码。translate_user 中 user_id 同样。测试覆盖 42 (32-bit内)、4294967297 (超32-bit)、9007199254740993 (2^53+1) 三个边界。"
+        },
+        {
+          "id": 2,
+          "title": "bytes base64 handling",
+          "requirement": "bytes fields must be base64-decoded from JSON strings",
+          "files": ["bridge/translator.py"],
+          "fix": "使用 base64.b64decode() 将 JSON base64 字符串解码为原生 bytes",
+          "tests": [
+            "tests/test_translation.py::test_bytes_field_base64_decoded",
+            "tests/test_translator.py::test_base64_decode"
+          ],
+          "verdict": "PASS",
+          "detail": "payload 和 binary_content 均经 base64.b64decode() 处理。avatar_data 同样解码。测试验证解码结果为 bytes 类型且内容与原文一致。"
+        },
+        {
+          "id": 3,
+          "title": "oneof variant mapping",
+          "requirement": "oneof fields must have exactly one variant set (not multiple)",
+          "files": ["bridge/translator.py"],
+          "fix": "根据内容存在性或 contact_type，仅设置一个 oneof 变体（text/binary 或 email/phone）",
+          "tests": [
+            "tests/test_translation.py::test_oneof_single_variant_text",
+            "tests/test_translation.py::test_oneof_single_variant_empty",
+            "tests/test_translator.py::test_oneof_email",
+            "tests/test_translator.py::test_oneof_phone"
+          ],
+          "verdict": "PASS",
+          "detail": "translate_event_streaming 中 binary_content 优先于 text_content，仅设其一。translate_user 根据 contact_type 精确设 email 或 phone。测试覆盖：仅文本、仅二进制、皆空、仅 email、仅 phone 五种场景。"
+        },
+        {
+          "id": 4,
+          "title": "enum integer vs string",
+          "requirement": "enum fields must be mapped from string names to integer values",
+          "files": ["bridge/translator.py", "service_b/schema.py"],
+          "fix": "通过 STATUS_MAP 和 ROLE_ENUM_MAP 将字符串枚举名映射为 proto3 整数码",
+          "tests": [
+            "tests/test_translation.py::test_enum_mapped_to_int",
+            "tests/test_translator.py::test_enum_admin",
+            "tests/test_translator.py::test_enum_user",
+            "tests/test_translator.py::test_enum_guest",
+            "tests/test_translator.py::test_enum_unknown_default"
+          ],
+          "verdict": "PASS",
+          "detail": "STATUS_MAP: UNKNOWN→0, ACTIVE→1, INACTIVE→2, PENDING→3（与 EventStatus IntEnum 一致）。ROLE_ENUM_MAP: UNKNOWN→0, ADMIN→1, USER→2, GUEST→3。未知枚举默认 0。所有合法状态及异常枚举均有覆盖。"
+        },
+        {
+          "id": 5,
+          "title": "HTTP 404 → NOT_FOUND mapping",
+          "requirement": "HTTP 404 from Service A must map to NOT_FOUND error code (5)",
+          "files": ["bridge/error_mapper.py"],
+          "fix": "将 404 映射从 INVALID_ARGUMENT(3) 修正为 NOT_FOUND(5)",
+          "tests": [
+            "tests/test_errors.py::test_404_maps_to_not_found",
+            "tests/test_error_mapper.py::test_404_not_found"
+          ],
+          "verdict": "PASS",
+          "detail": "error_mapper.py 中 404 返回 ErrorCode.NOT_FOUND (值 5)，消息 'Resource not found'。两个测试均断言 code == 5 / ErrorCode.NOT_FOUND。"
+        },
+        {
+          "id": 6,
+          "title": "HTTP 429 → RESOURCE_EXHAUSTED mapping",
+          "requirement": "HTTP 429 from Service A must map to RESOURCE_EXHAUSTED error code (8)",
+          "files": ["bridge/error_mapper.py"],
+          "fix": "将 429 映射从 INTERNAL(13) 修正为 RESOURCE_EXHAUSTED(8)",
+          "tests": [
+            "tests/test_errors.py::test_429_maps_to_resource_exhausted",
+            "tests/test_error_mapper.py::test_429_resource_exhausted"
+          ],
+          "verdict": "PASS",
+          "detail": "error_mapper.py 中 429 返回 ErrorCode.RESOURCE_EXHAUSTED (值 8)，消息 'Too many requests'。两个测试均断言 code == 8 / ErrorCode.RESOURCE_EXHAUSTED。"
+        }
+      ],
+      "additional_checks": [
+        {
+          "check": "其他 HTTP 状态映射正确性",
+          "status": "PASS",
+          "detail": "200→OK(0), 400→INVALID_ARGUMENT(3), 401/403→INVALID_ARGUMENT(3), 5xx→INTERNAL(13) 均与 spec.md 错误码映射表一致。"
+        },
+        {
+          "check": "e2e 管道完整性 (BridgePublisher → Consumer)",
+          "status": "PASS",
+          "detail": "BridgePublisher 调用 translate_event_streaming 和 map_http_error 后推送至 MessageConsumer。Consumer 含类型校验（payload bytes、status int）和 oneof 验证（validate_oneof）。e2e 测试覆盖正常翻译管道和错误路由管道。"
+        },
+        {
+          "check": "测试总数量",
+          "status": "PASS",
+          "detail": "共 26 个测试函数：test_translation.py(5) + test_translator.py(9) + test_errors.py(5) + test_error_mapper.py(5) + test_e2e.py(2) = 26"
+        },
+        {
+          "check": "map_error 辅助函数",
+          "status": "PASS",
+          "detail": "封装 map_http_error 调用返回 (code, message) 元组。消息表：0→Success, 3→Invalid argument, 5→Resource not found, 8→Too many requests, 13→Internal server error。"
+        }
+      ],
+      "overall_assessment": "所有 6 个 bug 修复均符合 spec.md。每个修正有对应测试覆盖且断言精准。无偏离规格之处。"
+    },
+    "test9": {
+      "verifier": "verifier2",
+      "title": "Subtask 2: test9 — Mock API Testing",
+      "timestamp": "2026-08-08T14:00:30+01:00",
+      "verdict": "PASS",
+      "summary": "All 8 hard requirements met. 10/10 tests passed in 0.12s.",
+      "requirements": [
+        {
+          "id": 1,
+          "description": "Mock all 3 API calls in service.py (get_user, get_weather, send_notification)",
+          "status": "PASS",
+          "evidence": "All three functions are mocked using @patch('service.requests.get') and @patch('service.requests.post')"
+        },
+        {
+          "id": 2,
+          "description": "Test file test_service.py using unittest.mock or pytest-mock",
+          "status": "PASS",
+          "evidence": "Uses from unittest.mock import patch, Mock"
+        },
+        {
+          "id": 3,
+          "description": "Mock successful responses for get_user and get_weather",
+          "status": "PASS",
+          "evidence": "test_get_user_success and test_get_weather_success mock 200 responses and validate returned data"
+        },
+        {
+          "id": 4,
+          "description": "Mock network timeout for send_notification and verify graceful handling",
+          "status": "PASS",
+          "evidence": "test_send_notification_timeout raises Timeout(), verifies error dict returned without crash"
+        },
+        {
+          "id": 5,
+          "description": "Assertions on URL/endpoint, parameters, and return value shape",
+          "status": "PASS",
+          "evidence": "Each test validates URL path, call args/params, and return dict shape with type checks"
+        },
+        {
+          "id": 6,
+          "description": "Fix error handling in service.py: send_notification missing try/except",
+          "status": "PASS",
+          "evidence": "send_notification now has try/except for Timeout, ConnectionError, and RequestException"
+        },
+        {
+          "id": 7,
+          "description": "Run python -m pytest test_service.py -v must pass with 0 failures",
+          "status": "PASS",
+          "evidence": "10 passed in 0.12s, 0 failures"
+        },
+        {
+          "id": 8,
+          "description": "Minimum 8 test functions total",
+          "status": "PASS",
+          "evidence": "10 test functions: 4 get_user, 3 get_weather, 3 send_notification"
+        }
+      ],
+      "test_results": {
+        "total": 10,
+        "passed": 10,
+        "failed": 0,
+        "duration": "0.12s"
+      }
+    }
+  }
+}

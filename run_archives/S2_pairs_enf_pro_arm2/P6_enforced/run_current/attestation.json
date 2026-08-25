@@ -1,0 +1,76 @@
+{
+  "crypto1": {
+    "verdict": "pass",
+    "verifier": "verifier2",
+    "verified_at": "2026-08-23",
+    "implementation_path": "/srv/jwteam_clone/shared/run_current/workspace",
+    "spec_path": "/srv/jwteam_clone/shared/run_current/spec/spec.md",
+    "requirements": [
+      {
+        "id": 1,
+        "requirement": "Nonces must be 96-bit (12 bytes) and cryptographically random — not counter-based",
+        "status": "pass",
+        "evidence": "crypto_service/nonce.py: generate() returns os.urandom(12); counter-based struct.pack logic fully removed"
+      },
+      {
+        "id": 2,
+        "requirement": "Key derivation must use PBKDF2 with >= 100,000 iterations",
+        "status": "pass",
+        "evidence": "crypto_service/key_derivation.py: hashlib.pbkdf2_hmac('sha256', ..., iterations=600000, dklen=32)"
+      },
+      {
+        "id": 3,
+        "requirement": "GCM authentication tag must be full 16 bytes — no truncation",
+        "status": "pass",
+        "evidence": "crypto_service/encryption.py: encrypt() returns full encryptor.tag (16 bytes); decrypt() uses modes.GCM(nonce) with default 16-byte tag and finalize_with_tag(tag), no min_tag_length=8 bypass"
+      },
+      {
+        "id": 4,
+        "requirement": "Salt generation using os.urandom() is already correct — do not modify it",
+        "status": "pass",
+        "evidence": "crypto_service/utils.py unchanged; generate_salt() still uses os.urandom(size)"
+      }
+    ],
+    "summary": "All 4 crypto1 requirements satisfied. Confirmed fixes: (1) counter-based nonce replaced with 96-bit CSPRNG (os.urandom(12)); (2) PBKDF2-HMAC-SHA256 iterations raised 1000 -> 600000 (>=100,000); (3) GCM tag truncation to 8 bytes removed — full 16-byte tag returned and verified; (4) salt generation left unchanged as required."
+  },
+  "ir2": {
+    "verdict": "pass",
+    "verifier": "verifier1",
+    "verified_at": "2026-08-23",
+    "implementation_path": "/srv/jwteam_clone/shared/run_current/workspace/answer.json",
+    "spec_path": "/srv/jwteam_clone/shared/run_current/spec/spec.md",
+    "answer": "TERRA-3",
+    "requirements": [
+      {
+        "id": 1,
+        "requirement": "Produce answer.json with answer and evidence fields",
+        "status": "pass",
+        "evidence": "answer.json exists; answer='TERRA-3'; evidence array present with 2 items"
+      },
+      {
+        "id": 2,
+        "requirement": "Exactly TWO evidence items from TWO DIFFERENT documents",
+        "status": "pass",
+        "evidence": "evidence = [ {doc: doc_A.txt, lines: [2,2]}, {doc: doc_B.txt, lines: [2,2]} ] — 2 items, 2 distinct docs"
+      },
+      {
+        "id": 3,
+        "requirement": "Evidence line ranges must contain the answer string verbatim",
+        "status": "pass",
+        "evidence": "doc_A.txt line 2: 'Initiative Peregrine carries the internal designation TERRA-3.'; doc_B.txt line 2: 'Initiative Peregrine (internal codename: TERRA-3) requires two-phase rollout.' — both contain 'TERRA-3' verbatim"
+      },
+      {
+        "id": 4,
+        "requirement": "doc_trap.txt must NOT be used as evidence (automatic failure)",
+        "status": "pass",
+        "evidence": "Evidence cites only doc_A.txt and doc_B.txt; doc_trap.txt correctly excluded"
+      }
+    ],
+    "notes": [
+      "Cross-verification: doc_A.txt and doc_B.txt independently confirm the internal codename is TERRA-3; doc_trap.txt (Unverified Memo, 'Do not cite') asserts TERRA-13 and was correctly rejected as the misinformation trap.",
+      "SPEC/CORPUS NAMING DISCREPANCY (noted, not a failure): the spec question text references 'Project Kestrel', but the actual corpus documents describe 'Initiative Peregrine' (doc_A title: 'Peregrine Initiative Report'). The string 'Kestrel' does not appear anywhere in the provided corpus. The verified answer 'TERRA-3' is the internal codename as stated by the actual corpus, which is the sole permitted evidence source.",
+      "Minor: answer.json contains an extra 'question' field not present in the spec's answer.json schema; it does not affect the required 'answer' + 'evidence' fields."
+    ],
+    "summary": "All 4 ir2 hard requirements satisfied. answer='TERRA-3' is cross-verified by two independent corpus documents (doc_A.txt, doc_B.txt), both line 2 contain the answer verbatim, and the trap document doc_trap.txt (TERRA-13) is correctly excluded."
+  }
+}

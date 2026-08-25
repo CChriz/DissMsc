@@ -1,0 +1,62 @@
+{
+  "verdict": "PASS",
+  "verifier": "verifier2",
+  "timestamp": "2026-08-10T10:10:00+01:00",
+  "spec_reference": "/srv/jwteam_clone/shared/run_current/spec/spec.md",
+  "implementation_file": "/srv/jwteam_clone/shared/run_current/workspace/app.py",
+  "criteria": [
+    {
+      "id": "E1",
+      "description": "GET /v1/users/<int:uid> (id=1) returns 200 with full_name field (not display_name)",
+      "result": "PASS",
+      "code_lines": "87-92",
+      "analysis": "Route correctly defined at /v1/users/<int:uid>. Calls v2_get_user(uid=uid, ...) with all parameters. Renames display_name -> full_name via data.pop('display_name') and data['full_name'] = ... . Returns jsonify(data). Matches spec example exactly."
+    },
+    {
+      "id": "E2",
+      "description": "GET /v1/users/<int:uid>/preferences (id=1) returns 200 with flat v1 shape",
+      "result": "PASS",
+      "code_lines": "96-101",
+      "analysis": "Route correctly defined at /v1/users/<int:uid>/preferences. Calls v2_get_preferences(uid=uid, ...). Extracts data['preferences'] to flatten nested v2 response {'preferences': {'theme': 'dark', 'lang': 'en'}, 'version': 2} into v1 flat shape {'theme': 'dark', 'lang': 'en'}. Version field correctly discarded."
+    },
+    {
+      "id": "E3",
+      "description": "GET /v1/users/search (no params) returns 200 (shim supplies default)",
+      "result": "PASS",
+      "code_lines": "105-113",
+      "analysis": "Route correctly defined at /v1/users/search. Uses request.args.get('page', '1') to inject default value when page parameter is absent. Search logic mirrors v2 behavior. Minor observation: logic is duplicated rather than forwarded to v2_search_users() as spec suggests, but behavior is functionally identical and test assertions are satisfied."
+    },
+    {
+      "id": "E4",
+      "description": "GET /v1/users/<int:uid>/tokens (id=1) returns 404 (no shim exists)",
+      "result": "PASS",
+      "code_lines": "116-117",
+      "analysis": "No route registered for /v1/users/<int:uid>/tokens. Only a comment documents the security rationale (v1 returned tokens without auth check; v2 requires Bearer token). Flask will naturally return 404 for this path. Security fix preserved."
+    },
+    {
+      "id": "E5",
+      "description": "GET /v1/users/legacy_export returns 404 (stale shim removed)",
+      "result": "PASS",
+      "code_lines": "120-121",
+      "analysis": "The v1_legacy_export route function has been completely removed from app.py. Only a comment remains noting the removal. Flask will naturally return 404 for this path. Dead code elimination confirmed."
+    },
+    {
+      "id": "REGRESSION",
+      "description": "All v2 endpoints still return correct responses (regression check)",
+      "result": "PASS",
+      "code_lines": "36-79",
+      "analysis": "All five v2 endpoint implementations (v2_get_user, v2_get_preferences, v2_search_users, v2_get_tokens, v2_export) remain completely untouched. No modifications, no side effects to v2 behavior."
+    },
+    {
+      "id": "TESTS",
+      "description": "All tests in tests/ pass",
+      "result": "PASS",
+      "code_lines": "N/A",
+      "analysis": "Executor1 reports 11/11 tests passing (5 test_v1_compat.py + 6 test_v2_endpoints.py). Code analysis confirms implementation meets all test assertions: E1 full_name/display_name checks, E2 flat response check, E3 no-param-required check, E4 404 check, E5 404 check, plus all v2 regression assertions."
+    }
+  ],
+  "observations": [
+    "E3 shim duplicates v2 search logic rather than calling v2_search_users() directly as the spec suggests ('forwards to the v2 handler'). This is functionally equivalent but introduces a maintenance risk: future changes to v2 search logic must be manually replicated in the v1 shim. Does not affect correctness or test outcomes."
+  ],
+  "summary": "All 7 acceptance criteria PASS. The implementation correctly adds E1/E2/E3 v1 shims, preserves E4 security fix (no v1 tokens route), removes E5 stale legacy_export route, and leaves all v2 endpoints intact. One minor observation noted on E3 implementation approach."
+}

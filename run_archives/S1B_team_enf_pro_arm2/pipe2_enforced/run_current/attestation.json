@@ -1,0 +1,39 @@
+{
+  "verdict": "pass",
+  "verified_by": "verifier1",
+  "verified_at": "2026-08-23T23:58:30+01:00",
+  "spec_path": "/srv/jwteam_clone/shared/run_current/spec/spec.md",
+  "workspace_path": "/srv/jwteam_clone/shared/run_current/workspace",
+  "checks": [
+    {
+      "id": "bug1_extract_key_columns",
+      "requirement": "Extractor must drop only rows where key columns (emp_id, full_name) are null/empty, and keep rows with null/empty non-key columns.",
+      "status": "pass",
+      "evidence": "pipeline/extract.py filters using KEY_COLUMNS=['emp_id','full_name'] only; non-key columns (department, notes) are not used for row dropping, so their empty values are preserved."
+    },
+    {
+      "id": "bug2_transform_truncation_255",
+      "requirement": "Transformer must strip string fields and truncate at 255 characters (not 50).",
+      "status": "pass",
+      "evidence": "pipeline/transform.py sets TRUNCATION_LIMIT=255 and truncates string-typed fields (full_name, department, notes) at 255 after stripping."
+    },
+    {
+      "id": "bug3_load_column_order",
+      "requirement": "Loader must map output columns in order emp_id, full_name, department, notes.",
+      "status": "pass",
+      "evidence": "pipeline/load.py uses OUTPUT_COLUMNS=['emp_id','full_name','department','notes'] as csv.DictWriter fieldnames, so column B/C are no longer swapped."
+    },
+    {
+      "id": "output_matches_expected",
+      "requirement": "Pipeline output must match data/expected_output.csv in headers and row content.",
+      "status": "pass",
+      "evidence": "data/output.csv is identical to data/expected_output.csv: header emp_id,full_name,department,notes and 6 data rows (the 2 rows with empty key columns are dropped)."
+    },
+    {
+      "id": "tests_cover_requirements",
+      "requirement": "Tests must exercise all three fixes and the full pipeline end-to-end.",
+      "status": "pass",
+      "evidence": "tests/test_pipeline.py contains 6 tests covering extract key-null filtering, 255-char truncation limit, load column order, and full pipeline match against expected output."
+    }
+  ]
+}

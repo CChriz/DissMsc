@@ -1,0 +1,105 @@
+AUDIT LOGGING COMPLIANCE POLICY — FINANCIAL SERVICES
+Application: FinanceApp
+Regulation: SOX / PCI-DSS
+Policy Version: 1.0
+Effective Date: 2024-01-01
+Classification: INTERNAL — COMPLIANCE SENSITIVE
+
+=== PURPOSE ===
+
+This policy defines mandatory audit logging requirements for FinanceApp.
+Compliance with SOX / PCI-DSS requires that all security-relevant events
+are captured in an immutable, tamper-evident audit trail.
+
+=== SECTION 1: REQUIRED EVENT TYPES ===
+
+The following event types MUST be logged. Any event of these types that
+occurs in the application must produce an audit log entry.
+
+Event Type: config_changed
+  Label: Config Changed
+  Description: System configuration is modified
+  Required Fields: event_type, log_id, user_id, timestamp, config_key, old_value, new_value, user_agent
+
+Event Type: user_login
+  Label: User Login
+  Description: A user authenticates into the system
+  Required Fields: event_type, log_id, user_id, timestamp, ip_address, success, correlation_id
+
+Event Type: report_accessed
+  Label: Report Accessed
+  Description: A financial report is viewed or exported
+  Required Fields: event_type, log_id, user_id, timestamp, report_id, report_type, request_id
+
+Event Type: data_exported
+  Label: Data Exported
+  Description: Bulk data export is performed
+  Required Fields: event_type, log_id, user_id, timestamp, export_format, record_count, destination, user_agent
+
+Event Type: payment_initiated
+  Label: Payment Initiated
+  Description: A payment transaction is started
+  Required Fields: event_type, log_id, user_id, timestamp, amount, currency, recipient_account, session_id
+
+=== SECTION 2: FIELD REQUIREMENTS ===
+
+Every audit log entry must contain ALL required fields for its event type.
+Missing fields constitute a compliance violation.
+
+Universal fields required on ALL event types:
+  - event_type (string): the event type identifier (e.g. 'user_login')
+  - log_id (string): a unique UUID for this log entry
+
+Event-type-specific fields are listed under Section 1.
+The full required field list per event type (including universal fields)
+is the union of universal fields and event-specific fields shown above.
+
+=== SECTION 3: TAMPER DETECTION ===
+
+Method: HMAC-SHA256 Entry Signature
+
+Each audit log entry must include a `signature` field containing an HMAC-SHA256 digest of the canonical JSON of the entry (fields sorted alphabetically, excluding the `signature` field itself). The HMAC key is the value of the environment variable AUDIT_HMAC_KEY (default: 'default-key' if unset). This allows any entry to be independently verified for tampering.
+
+The required tamper-detection field is: `signature`
+This field must be present on every audit log entry.
+Entries missing this field, or entries whose tamper-detection value does
+not verify correctly, are considered INVALID.
+
+=== SECTION 4: RETENTION POLICY ===
+
+Minimum Retention Period: 7 years (2555 days)
+Regulatory basis: Seven-year statutory retention for SOX financial records.
+
+Audit logs MUST be retained for at least the minimum retention period.
+Logs must NOT be deleted or overwritten before the retention period expires.
+After the retention period, logs MAY be archived or deleted, but only
+after producing a signed deletion certificate.
+
+=== SECTION 5: LOG ROTATION ===
+
+Rotation strategy: daily
+
+Audit log files must be rotated daily. Each file is named audit_YYYY-MM-DD.jsonl. The current day's entries are written to audit_today.jsonl and renamed at midnight.
+
+=== SECTION 6: IMPLEMENTATION REQUIREMENTS ===
+
+1. Implement audit logging in `audit.py`. The module must expose:
+     - `log_event(event_type: str, **fields) -> dict`
+       Creates, stores, and returns the audit log entry.
+     - `get_log() -> list[dict]`
+       Returns all audit log entries (in-memory for this task).
+     - `verify_log(entries: list[dict]) -> list[int]`
+       Returns indices of tampered entries (empty list if all valid).
+
+2. Integrate `log_event()` into `app.py` so every endpoint call that
+   triggers a loggable event produces an audit entry.
+
+3. The audit module must produce entries containing ALL required fields
+   for the relevant event type (see Section 1).
+
+4. Every entry must include the tamper-detection field as described in
+   Section 3. The `verify_log()` function must detect tampered entries.
+
+5. The `log_id` field must be a UUID4 string (use `uuid.uuid4()`).
+
+=== END OF POLICY ===

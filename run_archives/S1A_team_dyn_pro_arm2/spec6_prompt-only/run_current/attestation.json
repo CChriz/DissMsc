@@ -1,0 +1,239 @@
+{
+  "attestation": {
+    "overall_verdict": "PASS",
+    "score": 0.84,
+    "score_breakdown": {
+      "MUST_passed": 12,
+      "MUST_total": 12,
+      "SHOULD_passed": 4,
+      "SHOULD_total": 5,
+      "MAY_passed": 0,
+      "MAY_total": 3,
+      "formula": "(12/12 × 0.6) + (4/5 × 0.3) + (0/3 × 0.1) = 0.60 + 0.24 + 0.00 = 0.84"
+    },
+    "test_results": "50/50 passed",
+    "verification_team": {
+      "unit_level": "verifier1",
+      "integration_level": "verifier2"
+    },
+    "timestamp": "2026-08-10T08:53:00+01:00"
+  },
+
+  "MUST_requirements": [
+    {
+      "id": "M1",
+      "description": "SET <key> <value> stores value",
+      "verdict": "PASS",
+      "unit_notes": "_set handler correctly stores key-value pair. Value supports spaces via ' '.join(args[1:]). Overwrite of existing key verified.",
+      "integration_notes": "Cross-command verified: SET → GET returns exact value. SET → EXISTS → TRUE. SET overwrite of SETEX key clears TTL (expiry.pop)."
+    },
+    {
+      "id": "M2",
+      "description": "GET <key> returns value or ERR key_not_found",
+      "verdict": "PASS",
+      "unit_notes": "Returns exact value on hit, ERR key_not_found on miss. Includes _is_expired cleanup before lookup.",
+      "integration_notes": "GET after SETEX expiry returns ERR key_not_found (expired keys treated as non-existent). GET after DEL returns ERR key_not_found. GET after FLUSH returns ERR key_not_found."
+    },
+    {
+      "id": "M3",
+      "description": "DEL <key> removes key, ERR key_not_found if missing",
+      "verdict": "PASS",
+      "unit_notes": "Returns OK on successful delete, ERR key_not_found for missing key. Cleans up _expiry entry. _is_expired called first.",
+      "integration_notes": "DEL → GET → ERR key_not_found (full lifecycle verified). DEL → EXISTS → FALSE. DEL on SETEX-expired key returns ERR key_not_found (expiry cleanup before delete check)."
+    },
+    {
+      "id": "M4",
+      "description": "KEYS lists all keys, one per line, terminated by END",
+      "verdict": "PASS",
+      "unit_notes": "Empty store returns only END. Non-empty returns keys separated by newline, terminated by END. _cleanup_expired() called before listing.",
+      "integration_notes": "KEYS after SET + SETEX expiry: expired keys excluded. KEYS after FLUSH: only END. KEYS output is newline-separated (UNIX convention)."
+    },
+    {
+      "id": "M5",
+      "description": "COUNT returns COUNT <n>",
+      "verdict": "PASS",
+      "unit_notes": "Empty store returns COUNT 0. Non-empty returns correct count. _cleanup_expired() called before counting.",
+      "integration_notes": "COUNT reflects SET/DEL/FLUSH changes correctly. COUNT after SETEX expiry excludes expired keys. COUNT after MSET batch correctly reflects all committed keys."
+    },
+    {
+      "id": "M6",
+      "description": "EXISTS <key> returns TRUE or FALSE",
+      "verdict": "PASS",
+      "unit_notes": "Returns TRUE for existing key, FALSE for missing key. _is_expired cleanup before check.",
+      "integration_notes": "EXISTS after SETEX expiry returns FALSE. EXISTS after DEL returns FALSE. EXISTS after SET returns TRUE."
+    },
+    {
+      "id": "M7",
+      "description": "FLUSH removes all keys, returns OK",
+      "verdict": "PASS",
+      "unit_notes": "Clears both _data and _expiry dictionaries. Returns OK.",
+      "integration_notes": "FLUSH → COUNT 0 verified. FLUSH → KEYS → END verified. FLUSH clears SETEX expiry data as well. Post-FLUSH operations on empty store correctly return errors/miss indicators."
+    },
+    {
+      "id": "M8",
+      "description": "OK for successful SET and DEL",
+      "verdict": "PASS",
+      "unit_notes": "SET returns exact 'OK' (not substring match). DEL returns exact 'OK'.",
+      "integration_notes": "Response format consistent across all success paths. MSET returns 'OK <n>', SETEX returns 'OK', APPEND returns 'OK <new_length>' — all conforming to OK-prefix protocol."
+    },
+    {
+      "id": "M9",
+      "description": "ERR unknown_command for unrecognized commands",
+      "verdict": "PASS",
+      "unit_notes": "Unknown command, empty command, and whitespace-only command all return ERR unknown_command. Command matching is case-insensitive.",
+      "integration_notes": "Unrecognized command does not affect store state. Dispatch table extensible — missing handlers (TTL, RENAME, TYPE, DUMP) correctly fall through to unknown_command."
+    },
+    {
+      "id": "M10",
+      "description": "Maximum key length enforced, ERR key_too_long",
+      "verdict": "PASS",
+      "unit_notes": "Key > 64 chars rejected. Key == 64 chars accepted. _append() fix verified: key length check now present (line 276). All four key-creation paths (_set, _mset, _setex, _append) enforce M10.",
+      "integration_notes": "BUG FIXED: _append() previously lacked key length check, allowing M10 bypass via APPEND <65_char_key> val. Fix confirmed at line 276 of protocol.py. All creation paths now consistently enforce M10."
+    },
+    {
+      "id": "M11",
+      "description": "Maximum value size enforced, ERR value_too_large",
+      "verdict": "PASS",
+      "unit_notes": "Value > 1024 chars rejected. Value == 1024 chars accepted. Enforced in _set, _mset, _setex, and _append (checks resulting value length).",
+      "integration_notes": "APPEND value overflow: if new_value > 1024, error returned BEFORE writing to _data, preserving original value. MSET validation phase catches oversized values before commit phase."
+    },
+    {
+      "id": "M12",
+      "description": "Maximum keys enforced, ERR store_full, updates allowed",
+      "verdict": "PASS",
+      "unit_notes": "101st new key → ERR store_full. Update of existing key at capacity → OK. MSET at capacity with new keys → ERR store_full with atomic rollback.",
+      "integration_notes": "MSET capacity check uses dedup (new_key_names set) to correctly count unique new keys. SETEX and APPEND also enforce capacity for new-key paths. Expired keys cleaned up before capacity check, freeing slots."
+    }
+  ],
+
+  "SHOULD_requirements": [
+    {
+      "id": "S1",
+      "description": "MSET <k1> <v1> ... atomic batch set",
+      "verdict": "PASS",
+      "unit_notes": "Two-phase atomic commit validated. Odd number of arguments returns ERR unknown_command. Key/value limits and capacity enforced. Returns OK <n>.",
+      "integration_notes": "Atomicity verified: validation failure prevents any writes. Capacity check with batch dedup correct. MSET with mixed existing+new keys correctly counts unique new keys for capacity. Duplicate keys within batch handled (last value wins)."
+    },
+    {
+      "id": "S2",
+      "description": "MGET <k1> <k2> ... returns values, NIL for missing, END terminated",
+      "verdict": "PASS",
+      "unit_notes": "Returns values for existing keys, NIL for missing, END terminator. No arguments returns ERR unknown_command.",
+      "integration_notes": "MGET with mixed existing/missing keys produces correct output. NIL is distinct from empty value. _is_expired called per-key for proper expiry handling in batch."
+    },
+    {
+      "id": "S3",
+      "description": "TTL <key> returns remaining seconds, -1 if no expiry, ERR key_not_found",
+      "verdict": "FAIL",
+      "unit_notes": "Not implemented. No TTL handler in dispatch table. _execute() falls through to ERR unknown_command.",
+      "integration_notes": "TTL is the only SHOULD requirement not addressed. SETEX infrastructure (self._expiry dict, _is_expired, _cleanup_expired) exists and could support TTL implementation. Not blocking — 4/5 SHOULD ≥ 3 threshold."
+    },
+    {
+      "id": "S4",
+      "description": "SETEX <key> <seconds> <value> set with expiration",
+      "verdict": "PASS",
+      "unit_notes": "Seconds parsing robust: non-numeric, zero, negative all return ERR invalid_seconds. Expired keys treated as non-existent by GET/EXISTS. Key/value limits and capacity enforced.",
+      "integration_notes": "SETEX → GET (within TTL) returns value. SETEX → GET (after TTL) returns ERR key_not_found. SETEX → SET (overwrite) clears TTL — value persists past original TTL. Expiry timestamps use time.time() + seconds. SETEX does not affect non-expiry keys in COUNT/KEYS."
+    },
+    {
+      "id": "S5",
+      "description": "APPEND <key> <value> appends or creates, returns OK <new_length>",
+      "verdict": "PASS",
+      "unit_notes": "Append to existing key concatenates and returns new length. Create new key if missing. Key length, value size, and capacity limits all enforced (M10 fix applied).",
+      "integration_notes": "APPEND value overflow: returns ERR value_too_large without modifying original value. APPEND at full capacity for new key: ERR store_full. APPEND key with spaces in value: correct concatenation via ' '.join(). APPEND return value is resulting string length."
+    }
+  ],
+
+  "MAY_requirements": [
+    {
+      "id": "Y1",
+      "description": "RENAME <old_key> <new_key>",
+      "verdict": "NOT_IMPLEMENTED",
+      "notes": "No RENAME handler in dispatch table."
+    },
+    {
+      "id": "Y2",
+      "description": "TYPE <key> returns type of stored value",
+      "verdict": "NOT_IMPLEMENTED",
+      "notes": "No TYPE handler in dispatch table."
+    },
+    {
+      "id": "Y3",
+      "description": "DUMP returns all key-value pairs as <key>=<value>",
+      "verdict": "NOT_IMPLEMENTED",
+      "notes": "No DUMP handler in dispatch table."
+    }
+  ],
+
+  "integration_analysis": {
+    "method": "Static code trace-through of cross-command interaction paths",
+    "scenarios_verified": [
+      {
+        "name": "Full lifecycle (SET → GET → EXISTS → DEL → GET)",
+        "result": "PASS",
+        "detail": "State flows correctly through all command transitions."
+      },
+      {
+        "name": "SETEX expiry integration (SETEX → GET within TTL → GET after TTL → KEYS → COUNT)",
+        "result": "PASS",
+        "detail": "Expired keys properly cleaned up and excluded from all query commands."
+      },
+      {
+        "name": "MSET atomic rollback (MSET with validation failure preserves prior state)",
+        "result": "PASS",
+        "detail": "Two-phase commit: no partial writes on validation failure."
+      },
+      {
+        "name": "MSET capacity atomicity (MSET at capacity boundary with new keys)",
+        "result": "PASS",
+        "detail": "Correct dedup of new keys. Atomic rollback when capacity exceeded."
+      },
+      {
+        "name": "SET overwrites SETEX TTL",
+        "result": "PASS",
+        "detail": "SET calls _expiry.pop(key, None), removing TTL. Value persists past original expiry."
+      },
+      {
+        "name": "Error recovery (error does not corrupt prior state)",
+        "result": "PASS",
+        "detail": "Commands are independent. Error on one command leaves other keys intact."
+      },
+      {
+        "name": "APPEND value overflow preserves original",
+        "result": "PASS",
+        "detail": "new_value > MAX_VALUE_SIZE check executes before _data[key] = new_value assignment."
+      },
+      {
+        "name": "MGET mixed existing/missing/NIL",
+        "result": "PASS",
+        "detail": "Correct NIL for missing keys, values for existing, END terminator."
+      }
+    ],
+    "limit_enforcement_coverage": {
+      "M10_key_length": {
+        "paths_protected": ["_set", "_mset", "_setex", "_append"],
+        "status": "FULLY_ENFORCED",
+        "note": "_append M10 check added as bugfix (line 276)"
+      },
+      "M11_value_size": {
+        "paths_protected": ["_set", "_mset", "_setex", "_append"],
+        "status": "FULLY_ENFORCED"
+      },
+      "M12_capacity": {
+        "paths_protected": ["_set", "_mset", "_setex", "_append"],
+        "status": "FULLY_ENFORCED",
+        "note": "MSET uses deduplicated new-key counting for correct capacity check"
+      }
+    },
+    "defects_found_and_fixed": [
+      {
+        "id": "BUG-001",
+        "severity": "HIGH",
+        "requirement": "M10",
+        "description": "_append() created new keys without checking MAX_KEY_LENGTH",
+        "status": "FIXED",
+        "fix_location": "protocol.py line 275-277"
+      }
+    ]
+  }
+}

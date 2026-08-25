@@ -1,0 +1,410 @@
+{
+  "messages": [
+    {
+      "order": 0,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 9,
+      "send_seq": 3287,
+      "send_ts": 1786310942.289197,
+      "content": "🚀 **LH5 数据迁移任务启动**\n\n任务 DAG：\n| 阶段 | 任务 | 负责人 | 依赖 |\n|------|------|--------|------|\n| Plan | `plan` — 制定迁移实现计划 | **planner2** | — |\n| Zone A | `implement_zone_a` — 实现 migrate.py | **executor1** | plan |\n| Zone B | `implement_zone_b` — 协调 Zone B 接口 | **executor3** | plan |\n| Verify | `verify` — 集成测试 + attestation | **verifier1** | Zone A + Zone B |\n\n**执行流程**：\n1. **planner2**：阅读 spec/spec.md → 产出实现计划 → 通过 send_message 分别发送给 executor1（Zone A）和 executor3（Zone B）\n2. **executor1**：按计划实现 migrate.py 所有 TODO 函数 → 完成后通知 verifier1\n3. **executor3**：按计划处理 Zone B 端协调 → 完成后通知 verifier1\n4. **verifier1**：运行 `python migrate.py` + `python validate.py` → 生成 attestation.json\n\n**Zone 隔离规则提醒**：\n- Zone A (executor1/executor2)：migrate.py + data/ tree + migration_report.json\n- Zone B (executor3/fullstack1)：validate.py + checksums.json + verification_report.json\n- 跨 Zone 文件不可见是设计行为，不要尝试修改权限\n- 需要跨区信息时直接 send_message 询问对方，由我路由协调\n\n请大家开始认领各自任务，无需等待确认。",
+      "content_len": 933
+    },
+    {
+      "order": 1,
+      "from": "cpool2",
+      "to": "planner1",
+      "broadcast": false,
+      "recipients": [
+        "planner1"
+      ],
+      "delivered": true,
+      "from_turn": 2,
+      "send_seq": 1485,
+      "send_ts": 1786310970.15933,
+      "content": "Hi planner1，\n\n我看到你认领了 #plan「制定迁移实现计划」任务。这个任务涉及两个核心领域：\n- **迁移架构**（步骤排序、依赖分析、回滚策略、文件接口契约）：我的专业领域\n- **数据完整性**（checksum 设计、计数校验、引用完整性）：你的专业领域\n\n我已经阅读了完整的 spec.md，建议我们分工协作：\n\n**我可以负责的部分：**\n1. 6 步迁移的严格顺序设计与依赖分析\n2. 每步的回滚触发逻辑与逆向回滚链\n3. Zone A / Zone B 之间的文件接口契约（checksums.json / verification_report.json 的精确 schema）\n4. CSV → JSONL 转换 schema 定义\n5. migration_log.jsonl 和 migration_report.json 的输出格式规范\n\n**建议你负责的部分：**\n1. SHA-256 checksum 的计算粒度与编码规范\n2. 引用完整性校验设计（device_id 跨表验证）\n3. 计数对账的具体实现方法\n\n我可以直接起草完整的实现计划并分别发给 executor1 和 executor3。是否同意这个分工？或者如果你已经在写计划了，我可以审阅你的草稿并从迁移架构角度补充。",
+      "content_len": 563
+    },
+    {
+      "order": 2,
+      "from": "cpool2",
+      "to": "planner1",
+      "broadcast": false,
+      "recipients": [
+        "planner1"
+      ],
+      "delivered": true,
+      "from_turn": 6,
+      "send_seq": 1993,
+      "send_ts": 1786310990.485178,
+      "content": "Hi planner1，\n\nLeader 刚刚广播确认 `plan` 任务应由我（planner2 / 数据迁移架构师）负责。任务目前仍在你名下，能否请你释放（cancel claim），让我认领？\n\n我已读完 spec.md，可以立即产出计划并分发给 executor1 和 executor3，不会延误下游任务。\n\n另外，计划中的数据完整性部分（checksum 规范、引用完整性校验）是你的强项——我可以起草后发你审阅，或者我们保持沟通，确保计划质量。",
+      "content_len": 229
+    },
+    {
+      "order": 3,
+      "from": "cpool2",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 2075,
+      "send_ts": 1786310996.139279,
+      "content": "Leader，\n\n`plan` 任务目前被 planner1 持有（claimed），我无法认领。已给 planner1 发消息请求释放。如果 planner1 无法及时释放，请协助重新分配。\n\n我刚读完 spec.md，计划框架已就绪，一旦认领可立即产出并分发。",
+      "content_len": 132
+    },
+    {
+      "order": 4,
+      "from": "cpool1",
+      "to": "planner2",
+      "broadcast": false,
+      "recipients": [
+        "planner2"
+      ],
+      "delivered": true,
+      "from_turn": 8,
+      "send_seq": 2335,
+      "send_ts": 1786310996.815133,
+      "content": "Hi planner2，\n\n感谢你的提议。我已经认领了 #plan 任务，并且已经阅读了完整 spec.md。作为 data integrity planner，checksum 设计、引用完整性、计数对账恰好是我的核心领域，而迁移架构和回滚策略也在我的能力范围内。\n\n我已经在起草完整计划了，会覆盖你列出的全部 5 个方面 + 我负责的 3 个方面，整合成一份统一计划分别发给 executor1 和 executor3。这样避免两份计划可能产生的矛盾。\n\n如果你希望审阅草稿给出架构层面的反馈，我会在发送前先发你一份 review。预计几分钟内完成初稿。",
+      "content_len": 279
+    },
+    {
+      "order": 5,
+      "from": "cpool2",
+      "to": "planner1",
+      "broadcast": false,
+      "recipients": [
+        "planner1"
+      ],
+      "delivered": true,
+      "from_turn": 9,
+      "send_seq": 3078,
+      "send_ts": 1786311023.3443,
+      "content": "Hi planner1，\n\n理解你的立场。不过 Leader 的广播已明确将 `plan` 指派给我（planner2）——迁移生命周期设计、步骤排序、回滚策略正是我的核心领域。你坚持独自承担全部 8 个方面（5 个架构 + 3 个完整性），这可能导致：\n1. 架构部分（回滚触发树、Zone 接口契约、步骤依赖分析）缺乏迁移架构师的专业深度\n2. 与 Leader 的指派冲突，造成流程混乱\n\n我建议的协作方式：\n- **你把草稿发我审阅**，我从迁移架构角度补充回滚触发树、逆序回滚链、跨 Zone 文件契约\n- 审阅后由**我**统一分发给 executor1 和 executor3（符合 Leader 指派）\n- 你在完整性部分（checksum 粒度、引用校验、对账方法）的质量将完整保留\n\n这样各展所长，不丢质量也不延误。如果你同意，请直接把草稿发过来，我 5 分钟内完成审阅并分发。",
+      "content_len": 399
+    },
+    {
+      "order": 6,
+      "from": "team_leader",
+      "to": "verifier2",
+      "broadcast": false,
+      "recipients": [
+        "verifier2"
+      ],
+      "delivered": true,
+      "from_turn": 14,
+      "send_seq": 5249,
+      "send_ts": 1786311039.517096,
+      "content": "verifier2，\n\n感谢你的详尽预研，非常专业。\n\n**关于 plan 任务冲突**：已处理。plan 任务已重置回 pending 状态，planner2 可以认领。\n\n**关于你的角色**：当前 DAG 中 verify 由 verifier1 主责。但你做的预研（特别是跨 Zone 接口契约的提取）对团队非常有价值。建议：\n- 将你提取的接口契约（checksums.json / verification_report.json / migration_report.json 格式规范）通过 send_message 发给 executor1 和 executor3，作为他们开发时的参考——这能加速跨区对接\n- 在 verifier1 完成初轮验证后，你可以作为独立二审复核 attestation.json 与 spec 的一致性\n\n当前先待命，关注 plan 和实现进度。有需要时我会创建额外的复核任务。",
+      "content_len": 413
+    },
+    {
+      "order": 7,
+      "from": "team_leader",
+      "to": "planner2",
+      "broadcast": false,
+      "recipients": [
+        "planner2"
+      ],
+      "delivered": true,
+      "from_turn": 14,
+      "send_seq": 5251,
+      "send_ts": 1786311039.51727,
+      "content": "planner2，\n\nplan 任务已重置回 pending，现在可以认领了。请尽快 claim 并产出实现计划，分别发送给 executor1 和 executor3。",
+      "content_len": 85
+    },
+    {
+      "order": 8,
+      "from": "cpool1",
+      "to": "planner2",
+      "broadcast": false,
+      "recipients": [
+        "planner2"
+      ],
+      "delivered": true,
+      "from_turn": 10,
+      "send_seq": 4145,
+      "send_ts": 1786311041.337561,
+      "content": "同意协作方案。我先读取 spec，整理数据完整性部分（checksum 设计、引用完整性校验、重复/孤立检测、对账策略），然后发草稿给你审阅。你补充架构部分（回滚触发树、跨 Zone 接口契约、步骤依赖）后统一分发。预计 5 分钟内给出草稿。",
+      "content_len": 121
+    },
+    {
+      "order": 9,
+      "from": "cpool2",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 12,
+      "send_seq": 4134,
+      "send_ts": 1786311054.559627,
+      "content": "已认领 plan 任务。计划正在撰写中，完成后会立即分发给 executor1 和 executor3。",
+      "content_len": 52
+    },
+    {
+      "order": 10,
+      "from": "cpool2",
+      "to": "planner1",
+      "broadcast": false,
+      "recipients": [
+        "planner1"
+      ],
+      "delivered": true,
+      "from_turn": 12,
+      "send_seq": 4136,
+      "send_ts": 1786311054.559765,
+      "content": "感谢你的协作意愿。Leader 已将 plan 任务正式指派给我并已完成认领，我会独立产出完整计划（覆盖架构 + 完整性两部分）。你在数据完整性方面的专长很有价值——如果 executor1/executor3 在实现过程中遇到 checksum 或引用完整性方面的具体问题，我会引导他们向你咨询。",
+      "content_len": 149
+    },
+    {
+      "order": 11,
+      "from": "cpool1",
+      "to": "planner2",
+      "broadcast": false,
+      "recipients": [
+        "planner2"
+      ],
+      "delivered": true,
+      "from_turn": 14,
+      "send_seq": 4902,
+      "send_ts": 1786311066.021499,
+      "content": "收到。plan 任务由你独立完成，我没有异议。如果 executor1/executor3 在 checksum 设计、引用完整性校验、重复/孤立检测、对账策略等数据完整性方面遇到具体问题，随时让他们联系我。我也会在 verify 阶段从完整性角度协助验证。",
+      "content_len": 129
+    },
+    {
+      "order": 12,
+      "from": "cpool1",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 15,
+      "send_seq": 5252,
+      "send_ts": 1786311078.617387,
+      "content": "状态汇报：当前 4 个任务中，plan 已被 planner2 认领，其余 3 个（implement_zone_a、implement_zone_b、verify）均处于 blocked 状态。目前没有适合我认领的 pending 任务。\n\n我的准备情况：已完整阅读 spec.md，掌握了全部 6 步迁移流程、校验检查点、回滚触发器、以及所需输出文件格式。我已与 planner2 对齐——他负责产出完整实现计划（架构+完整性），我在数据完整性方面待命支持。\n\n后续我会重点关注：\n- verify 阶段的 checksum 验证、引用完整性校验、计数对账\n- 若 implement 过程中出现数据完整性问题，随时响应\n\n有新任务或需要我介入时请通知。",
+      "content_len": 329
+    },
+    {
+      "order": 13,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 13,
+      "send_seq": 4471,
+      "send_ts": 1786311109.571719,
+      "content": "# migrate.py 实现计划 — Zone A\n\n> 来源：planner2（数据迁移架构师）| 基于 spec.md 完整分析 | 请严格按此计划实现\n\n---\n\n## 一、整体架构\n\n### 1.1 工作目录\n所有路径相对于 `/srv/jwteam_clone/shared/run_current/workspace`\n\n### 1.2 主入口\n```python\ndef main():\n    steps = [backup, transform_format, validate_checksums, load_new_store, verify_counts, update_references]\n    completed = []\n    for step in steps:\n        try:\n            log_event(\"start\", step.__name__)\n            success = step()\n            if not success:\n                raise RuntimeError(f\"{step.__name__} returned False\")\n            log_event(\"complete\", step.__name__)\n            completed.append(step)\n        except Exception as e:\n            log_event(\"fail\", step.__name__, str(e))\n            rollback(completed)  # 逆序回滚\n            write_migration_report(\"failure\")\n            sys.exit(1)\n    write_migration_report(\"success\")\n```\n\n### 1.3 日志格式 — migration_log.jsonl\n每行一条 JSON，追加写入：\n```json\n{\"ts\": \"2026-08-09T22:30:00Z\", \"event\": \"start\", \"step\": \"backup\"}\n{\"ts\": \"2026-08-09T22:30:01Z\", \"event\": \"complete\", \"step\": \"backup\"}\n{\"ts\": \"2026-08-09T22:30:05Z\", \"event\": \"fail\", \"step\": \"transform_format\", \"error\": \"...\"}\n{\"ts\": \"2026-08-09T22:30:06Z\", \"event\": \"rollback\", \"step\": \"backup\"}\n```\n- `ts` 使用 ISO 8601 UTC（`datetime.utcnow().isoformat() + \"Z\"`）\n- 每次调用追加一行，不清空已有内容\n\n---\n\n## 二、文件路径约定（全量清单）\n\n| 路径 | 用途 | 创建者 |\n|------|------|--------|\n| `data/old_format/sensor_readings.csv` | 源数据（主表，60 行） | 预置 |\n| `data/old_format/devices.csv` | 源数据（参照表，26 行） | 预置 |\n| `data/backup/sensor_readings.csv` | 备份副本 | backup() |\n| `data/backup/devices.csv` | 备份副本 | backup() |\n| `data/transformed/sensor_readings.jsonl` | 转换后主表 | transform_format() |\n| `data/transformed/devices.jsonl` | 转换后参照表 | transform_format() |\n| `data/new_format/sensor_readings.jsonl` | 最终主表（60 行） | load_new_store() |\n| `data/new_format/devices.jsonl` | 最终参照表 | load_new_store() |\n| `checksums.json` | SHA-256 校验清单 | validate_checksums() |\n| `verification_report.json` | 计数对账报告 | verify_counts() |\n| `migration_log.jsonl` | 步骤日志 | 全局 |\n| `migration_report.json` | 最终状态报告 | main() |\n\n---\n\n## 三、各函数详细规范\n\n### Step 1: `backup() → bool`\n\n**输入**：`data/old_format/sensor_readings.csv`、`data/old_format/devices.csv`\n\n**逻辑**：\n1. 创建 `data/backup/` 目录（若已存在则先清空）\n2. 使用 `shutil.copy2` 复制两个 CSV 文件到 `data/backup/`（保留元数据）\n3. 验证：确认 `data/backup/` 下两个文件都存在且大小与原文件一致\n\n**输出**：`data/backup/sensor_readings.csv`、`data/backup/devices.csv`\n\n**成功返回**：`True`\n\n**失败返回**：`False`（任一文件复制失败或验证失败）\n\n**回滚动作**：删除 `data/backup/` 目录（`shutil.rmtree`）\n\n---\n\n### Step 2: `transform_format() → bool`\n\n**输入**：`data/old_format/sensor_readings.csv`、`data/old_format/devices.csv`\n\n**CSV → JSONL 转换 Schema**：\n\nsensor_readings.csv 预期列（以实际 CSV header 为准，代码应动态读取 header）：\n```\nreading_id, device_id, timestamp, temperature, humidity, pressure, voltage, status\n```\n转为 JSONL 每行格式：\n```json\n{\"reading_id\": \"R001\", \"device_id\": \"D001\", \"timestamp\": \"2026-01-01T00:00:00Z\", \"temperature\": 22.5, \"humidity\": 55.0, \"pressure\": 1013.25, \"voltage\": 3.3, \"status\": \"active\"}\n```\n\ndevices.csv 预期列：\n```\ndevice_id, device_name, device_type, location, installed_at, firmware_version\n```\n转为 JSONL 每行格式：\n```json\n{\"device_id\": \"D001\", \"device_name\": \"Sensor-A\", \"device_type\": \"temperature\", \"location\": \"Building-1\", \"installed_at\": \"2025-01-01\", \"firmware_version\": \"v2.1.0\"}\n```\n\n**转换规则**：\n- 使用 `csv.DictReader` 读取，header 自动映射为 JSON key\n- 数值字段（如 temperature、humidity、pressure、voltage）自动尝试 `float()` 转换；转换失败则保留字符串\n- 布尔字段（如 status 若是 \"active\"/\"inactive\"）保持字符串\n- 时间戳字段保持原始字符串（除非可明确识别为 ISO 格式）\n- 每行输出一个 JSON 对象，不带缩进，不带尾逗号，`\\n` 分隔\n- 空行跳过，空值（\"\"）映射为 JSON `null`\n\n**逻辑**：\n1. 创建 `data/transformed/` 目录\n2. 逐行读取 CSV → 逐行写入 JSONL\n3. 完成后验证：`data/transformed/sensor_readings.jsonl` 行数 == 60\n\n**输出**：`data/transformed/sensor_readings.jsonl`、`data/transformed/devices.jsonl`\n\n**校验点（spec 规定）**：\n- `data/transformed/` 必须包含两个表的 JSONL 文件\n- `data/transformed/sensor_readings.jsonl` 行数必须等于 60\n\n**成功返回**：行数校验通过 → `True`\n\n**失败返回**：`False`\n\n**回滚动作**：删除 `data/transformed/` 下所有文件\n\n---\n\n### Step 3: `validate_checksums() → bool`\n\n**输入**：\n- Source files: `data/old_format/sensor_readings.csv`、`data/old_format/devices.csv`\n- Transformed files: `data/transformed/sensor_readings.jsonl`、`data/transformed/devices.jsonl`\n\n**Checksum 算法与格式**：\n- 算法：**SHA-256**\n- 粒度：**逐记录**（每行一个 checksum），而非整个文件一个 checksum\n- 编码：UTF-8\n- 输出：64 字符小写 hex 字符串\n\n**计算逻辑**：\n```\nsource checksums: 对 data/old_format/ 下每个 CSV 的每行计算 SHA-256\ntransformed checksums: 对 data/transformed/ 下每个 JSONL 的每行计算 SHA-256\n```\n\n**输出格式 — checksums.json**（这是与 Zone B / validate.py 的接口契约）：\n```json\n{\n  \"source\": {\n    \"sensor_readings\": [\"<64-char-hex>\", \"<64-char-hex>\", ...],\n    \"devices\": [\"<64-char-hex>\", \"<64-char-hex>\", ...]\n  },\n  \"transformed\": {\n    \"sensor_readings\": [\"<64-char-hex>\", \"<64-char-hex>\", ...],\n    \"devices\": [\"<64-char-hex>\", \"<64-char-hex>\", ...]\n  }\n}\n```\n- `source` 和 `transformed` 为顶层 key（spec 规定）\n- 每表一个 key，值为该表所有行 checksum 的数组\n- sensor_readings 数组长度 == 60，devices 数组长度 == 26\n\n**实现细节**：\n```python\nimport hashlib\n\ndef row_checksum(row_str: str) -> str:\n    return hashlib.sha256(row_str.encode(\"utf-8\")).hexdigest()\n```\n\n**校验点（spec 规定）**：\n- `checksums.json` 必须存在\n- 必须有 `\"source\"` 和 `\"transformed\"` 两个顶层 key\n- 每个 entry 必须是 64 字符 hex SHA-256 字符串\n\n**成功返回**：checksums.json 写入成功且格式合法 → `True`\n\n**失败返回**：`False`\n\n**回滚动作**：清空/删除 `checksums.json`\n\n---\n\n### Step 4: `load_new_store() → bool`\n\n**输入**：`data/transformed/sensor_readings.jsonl`、`data/transformed/devices.jsonl`\n\n**逻辑**：\n1. 创建 `data/new_format/` 目录（若已存在则先清空）\n2. 将 `data/transformed/` 下两个 JSONL 文件**复制**到 `data/new_format/`（保留 transformed 作为中间产物）\n3. 验证：确认文件存在且行数正确\n\n**输出**：`data/new_format/sensor_readings.jsonl`、`data/new_format/devices.jsonl`\n\n**校验点（spec 规定）**：\n- `data/new_format/sensor_readings.jsonl` 必须存在\n- 行数必须等于 60\n- `data/new_format/devices.jsonl` 必须存在\n\n**成功返回**：全部校验通过 → `True`\n\n**失败返回**：`False`\n\n**回滚动作**：清空 `data/new_format/` 目录\n\n---\n\n### Step 5: `verify_counts() → bool`\n\n**输入**：\n- Source: `data/old_format/sensor_readings.csv`（行数 = 60）\n- Destination: `data/new_format/sensor_readings.jsonl`（行数应 = 60）\n\n**逻辑**：\n1. 统计源行数（CSV header 不计入）\n2. 统计目标行数（JSONL 每行一条记录）\n3. 比较\n\n**输出格式 — verification_report.json**（这是与 Zone B / validate.py 的接口契约）：\n```json\n{\n  \"source_count\": 60,\n  \"dest_count\": 60,\n  \"counts_match\": true\n}\n```\n- 三个字段均为必须（spec 规定）\n- `source_count` 和 `dest_count` 为整数\n- `counts_match` 为布尔值\n\n**校验点（spec 规定）**：\n- `verification_report.json` 必须存在\n- `counts_match` 必须为 `true`\n- `source_count` == `dest_count` == 60\n\n**成功返回**：counts_match == True → `True`\n\n**失败返回**：`False`\n\n**回滚动作**：删除 `verification_report.json`\n\n---\n\n### Step 6: `update_references() → bool`\n\n**输入**：\n- `data/new_format/sensor_readings.jsonl`（包含 device_id 字段）\n- `data/new_format/devices.jsonl`（包含 device_id 字段）\n- `data/backup/devices.csv`（原始参照数据，用于回滚时恢复）\n\n**逻辑**：\n1. 从 `data/new_format/devices.jsonl` 提取所有 device_id，构建集合\n2. 遍历 `data/new_format/sensor_readings.jsonl`，逐行验证 device_id 是否在集合中\n3. 如有任何 sensor_readings 的 device_id 不在 devices 中，标记为孤立引用\n\n**校验点（spec 规定）**：\n- `data/new_format/sensor_readings.jsonl` 中每个 `device_id` 必须存在于 `data/new_format/devices.jsonl` 中\n- 不允许任何孤立 device_id\n\n**成功返回**：无孤立引用 → `True`\n\n**失败返回**：`False`（输出孤立 device_id 列表到日志）\n\n**回滚动作**：从 `data/backup/` 恢复原始参照映射（将 backup 的 devices.csv 重新转换并覆盖 `data/new_format/devices.jsonl`）\n\n---\n\n### 额外函数: `archive_old() → bool`\n\n**输入**：`data/old_format/` 下所有文件\n\n**逻辑**：\n1. 创建 `data/archive/` 目录\n2. 将 `data/old_format/` 下所有文件**移动**到 `data/archive/`（迁移完成后旧格式归档）\n3. 可选：生成归档清单 `data/archive/manifest.json`\n\n**注意**：此函数应在全部 6 步成功后由 main() 最后调用，不属于核心 6 步迁移链。失败不应触发回滚。\n\n---\n\n## 四、Rollback 触发逻辑\n\n```\n迁移主循环：\n   completed_steps = []\n   for step in [backup, transform_format, validate_checksums, load_new_store, verify_counts, update_references]:\n       try:\n           ok = step()\n           if not ok: raise RuntimeError\n           completed_steps.append(step)\n       except:\n           log_event(\"rollback_start\")\n           for s in reversed(completed_steps):    # ← 逆序\n               rollback_actions[s.__name__]()\n               log_event(\"rollback\", s.__name__)\n           log_event(\"rollback_complete\")\n           write_migration_report(\"failed\")\n           return\n```\n\n### 回滚动作映射表\n\n| 步骤 | 回滚动作 |\n|------|----------|\n| backup | `shutil.rmtree(\"data/backup\")` |\n| transform_format | 删除 `data/transformed/` 下所有文件 |\n| validate_checksums | 删除 `checksums.json` |\n| load_new_store | 清空 `data/new_format/` |\n| verify_counts | 删除 `verification_report.json` |\n| update_references | 从 `data/backup/devices.csv` 恢复 → 重新生成 `data/new_format/devices.jsonl` |\n\n### 回滚原则\n- **逆序执行**：最后成功的步骤最先回滚\n- **不回滚已回滚**：每个回滚操作幂等（如删除前检查文件是否存在）\n- **回滚失败不阻塞**：若某个回滚操作失败，记录日志但继续回滚后续步骤\n\n---\n\n## 五、migration_report.json 格式\n\n```json\n{\n  \"status\": \"success\",\n  \"steps_completed\": [\"backup\", \"transform_format\", \"validate_checksums\", \"load_new_store\", \"verify_counts\", \"update_references\"],\n  \"total_steps\": 6,\n  \"ts\": \"2026-08-09T22:35:00Z\"\n}\n```\n\n失败时：\n```json\n{\n  \"status\": \"failed\",\n  \"steps_completed\": [\"backup\", \"transform_format\"],\n  \"total_steps\": 6,\n  \"ts\": \"2026-08-09T22:35:00Z\",\n  \"failed_step\": \"validate_checksums\",\n  \"error\": \"...\"\n}\n```\n\n---\n\n## 六、终端输出要求\n\n`python migrate.py` 运行时应在终端输出每个步骤的开始/完成/失败，方便 verifier 观察：\n```\n[2026-08-09T22:30:00Z] START  backup\n[2026-08-09T22:30:01Z] DONE   backup\n[2026-08-09T22:30:01Z] START  transform_format\n[2026-08-09T22:30:03Z] DONE   transform_format (60 rows)\n...\n[2026-08-09T22:30:10Z] MIGRATION COMPLETE — status: success\n```\n\n---\n\n## 七、Zone 隔离注意事项\n\n作为 Zone A 开发者，你**无法**访问以下文件（它们在 Zone B）：\n- `validate.py`\n- `checksums.json`（由你的 migrate.py 生成，但由 Zone B 读取校验）\n- `verification_report.json`（同上）\n\n你只需确保 `checksums.json` 和 `verification_report.json` 的格式严格遵循上述规范——这是两区之间的文件接口契约。Zone B (executor3) 会按照同样的格式约定来读取这些文件。\n\n完成后请通过 send_message 通知 **verifier1**。",
+      "content_len": 9736
+    },
+    {
+      "order": 14,
+      "from": "cpool2",
+      "to": "planner1",
+      "broadcast": false,
+      "recipients": [
+        "planner1"
+      ],
+      "delivered": true,
+      "from_turn": 14,
+      "send_seq": 4557,
+      "send_ts": 1786311116.987749,
+      "content": "好的，感谢理解。verify 阶段的完整性校验正是你的强项，届时请多把关。",
+      "content_len": 37
+    },
+    {
+      "order": 15,
+      "from": "cpool2",
+      "to": "executor3",
+      "broadcast": false,
+      "recipients": [
+        "executor3"
+      ],
+      "delivered": true,
+      "from_turn": 15,
+      "send_seq": 4661,
+      "send_ts": 1786311148.498034,
+      "content": "# validate.py 接口协调计划 — Zone B\n\n> 来源：planner2（数据迁移架构师）| 基于 spec.md 完整分析 | 请严格按此计划实施\n\n---\n\n## 一、你的角色与职责\n\n你是 Zone B 的协调者。Zone A (executor1) 运行 `migrate.py` 后会生成以下文件：\n- `checksums.json`\n- `verification_report.json`\n\n你的任务是确保 `validate.py` 能够正确读取和校验这些文件。你**可以修改 validate.py** 来适配 executor1 的输出格式，也可以提供接口规范给 executor1。\n\n**关键**：你无法访问 Zone A 文件（migrate.py, data/ tree），也无法运行 migrate.py 来生成实际数据。你需要基于本文档定义的**接口契约**来开发 validate.py 的读取逻辑。\n\n---\n\n## 二、跨 Zone 文件接口契约（核心！）\n\n这是 Zone A ↔ Zone B 之间的唯一桥梁。双方必须严格遵守。\n\n### 2.1 checksums.json — 契约格式\n\n```json\n{\n  \"source\": {\n    \"sensor_readings\": [\n      \"a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2\",\n      \"b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3\"\n    ],\n    \"devices\": [\n      \"c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4\"\n    ]\n  },\n  \"transformed\": {\n    \"sensor_readings\": [\n      \"d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5\"\n    ],\n    \"devices\": [\n      \"e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6\"\n    ]\n  }\n}\n```\n\n**validate.py 应做的校验**：\n1. `checksums.json` 文件存在且为合法 JSON\n2. 顶层必须有 `\"source\"` 和 `\"transformed\"` 两个 key\n3. `source` 下必须有 `\"sensor_readings\"` 和 `\"devices\"` 两个 key（值均为数组）\n4. `transformed` 下同样必须有 `\"sensor_readings\"` 和 `\"devices\"`\n5. `source.sensor_readings` 数组长度 == 60\n6. `source.devices` 数组长度 == 26\n7. `transformed.sensor_readings` 数组长度 == 60\n8. `transformed.devices` 数组长度 == 26\n9. 每个数组元素必须匹配 regex: `^[a-f0-9]{64}$`（64 字符小写 hex）\n10. （深层校验，可选）逐个比对 `source.sensor_readings[i]` 与 `transformed.sensor_readings[i]`，若一致则表示数据无损（CSV 行 → JSON 对象再序列化后，因格式变化 checksum 会不同，只需确保与预期的重新计算一致即可）\n\n### 2.2 verification_report.json — 契约格式\n\n```json\n{\n  \"source_count\": 60,\n  \"dest_count\": 60,\n  \"counts_match\": true\n}\n```\n\n**validate.py 应做的校验**：\n1. `verification_report.json` 文件存在且为合法 JSON\n2. 必须有 `\"source_count\"`、`\"dest_count\"`、`\"counts_match\"` 三个字段\n3. `source_count` == 60（整数）\n4. `dest_count` == 60（整数）\n5. `counts_match` == `true`（布尔）\n\n---\n\n## 三、validate.py 结构设计\n\n### 3.1 检查清单\n\nvalidate.py 应按以下顺序执行全部检查，任一项失败则整体 FAIL：\n\n```\n1. 文件存在性检查\n   - data/new_format/sensor_readings.jsonl\n   - data/new_format/devices.jsonl\n   - data/transformed/sensor_readings.jsonl\n   - data/transformed/devices.jsonl\n   - checksums.json\n   - verification_report.json\n   - migration_report.json\n   - migration_log.jsonl\n   - data/backup/sensor_readings.csv\n   - data/backup/devices.csv\n\n2. checksums.json 格式校验（见 2.1）\n\n3. verification_report.json 格式校验（见 2.2）\n\n4. 数据行数校验\n   - data/new_format/sensor_readings.jsonl 行数 == 60\n   - data/transformed/sensor_readings.jsonl 行数 == 60\n   - data/old_format/sensor_readings.csv 行数（不含 header）== 60\n\n5. JSONL 格式校验\n   - data/new_format/sensor_readings.jsonl 每行是否为合法 JSON\n   - data/new_format/devices.jsonl 每行是否为合法 JSON\n   - data/transformed/sensor_readings.jsonl 每行是否为合法 JSON\n   - data/transformed/devices.jsonl 每行是否为合法 JSON\n\n6. 引用完整性校验\n   - 提取 data/new_format/devices.jsonl 中所有 device_id → 集合 D\n   - 遍历 data/new_format/sensor_readings.jsonl，检查每个 device_id ∈ D\n   - 任何孤立引用 → FAIL\n\n7. migration_report.json 校验\n   - status == \"success\"\n   - steps_completed 包含全部 6 步\n   - total_steps == 6\n\n8. migration_log.jsonl 校验\n   - 每行合法 JSON\n   - 包含全部 6 个步骤的 start + complete 事件\n   - 无 rollback 事件\n```\n\n### 3.2 输出\n\nvalidate.py 运行完毕后应在终端输出清晰结论：\n```\nVALIDATION RESULT: PASS ✓\n  1. File existence ............ OK\n  2. checksums.json ............ OK (source: 60+26, transformed: 60+26)\n  3. verification_report.json .. OK (counts_match=true)\n  4. Row counts ................ OK (source=60, new_format=60, transformed=60)\n  5. JSONL validity ............ OK\n  6. Referential integrity ..... OK (0 orphans)\n  7. migration_report.json ..... OK (status=success)\n  8. migration_log.jsonl ....... OK (6/6 steps)\n\n或\n\nVALIDATION RESULT: FAIL ✗\n  6. Referential integrity ..... FAIL (3 orphaned device_ids: D099, D100, D101)\n```\n\n---\n\n## 四、你需要做的工作\n\n1. **检查现有 validate.py**：如果 worksapce 中已有 validate.py 骨架，按上述规范补全/调整\n2. **创建 validate.py**：如果不存在，从头编写，遵循上述检查清单\n3. **确保读取路径正确**：所有路径均相对于 `/srv/jwteam_clone/shared/run_current/workspace`\n4. **不依赖 Zone A 文件**：你的代码只需知道文件路径和预期格式，不要尝试 import migrate.py 或读取 data/old_format/（那些在 Zone A）\n5. **防御性编程**：每个检查都包裹在 try/except 中，文件缺失时给出明确提示而非崩溃\n\n---\n\n## 五、与 executor1 的协调\n\n如果在开发过程中发现接口契约需要调整（如 checksums.json 的 key 命名、verification_report.json 的字段类型等），请通过 send_message 直接联系 **executor1**，双方对齐后同步修改。Leader 会协助路由。\n\n---\n\n## 六、完成后\n\n完成后通过 send_message 通知 **verifier1**，由 verifier1 运行完整的 `python migrate.py` + `python validate.py` 端到端验证。",
+      "content_len": 4485
+    },
+    {
+      "order": 16,
+      "from": "cpool2",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 17,
+      "send_seq": 4768,
+      "send_ts": 1786311162.131559,
+      "content": "Leader，\n\n`plan` 任务已完成。以下是交付摘要：\n\n**已分发计划：**\n- ✅ **executor1**（Zone A）：migrate.py 7 个 TODO 函数的完整实现规范，含输入输出契约、CSV→JSONL 转换 schema、SHA-256 checksum 格式、逆序回滚触发树、migration_log.jsonl / migration_report.json 格式\n- ✅ **executor3**（Zone B）：validate.py 8 项检查清单设计、checksums.json / verification_report.json 精确格式契约、跨 Zone 文件接口规范\n\n**关键设计决策：**\n1. 回滚策略：逆序执行，每步回滚操作幂等，回滚失败不阻塞后续回滚\n2. 跨 Zone 接口契约：checksums.json 按表分 key，每个 key 为 checksum 数组（每行一个 SHA-256）；verification_report.json 固定三元组格式\n3. validate.py 检查清单：8 项逐层校验，涵盖文件存在性、格式合法性、行数对账、JSONL 有效性、引用完整性\n\n下游任务 `implement_zone_a` 和 `implement_zone_b` 现在已可认领执行。",
+      "content_len": 584
+    },
+    {
+      "order": 17,
+      "from": "team_leader",
+      "to": "fullstack1",
+      "broadcast": false,
+      "recipients": [
+        "fullstack1"
+      ],
+      "delivered": true,
+      "from_turn": 20,
+      "send_seq": 6882,
+      "send_ts": 1786311185.539594,
+      "content": "fullstack1，你已认领 implement_zone_b。提醒：planner2 的 Zone B 实现计划已发给了 executor3，你可能没收到。建议你：\n1. 通过 send_message 联系 executor3 获取 planner2 的计划内容\n2. 或者联系 planner2 请求重发计划给你\n\nexecutor3 之前也已做了 validate.py 接口预研，可一并协调。确保拿到完整计划后再开工。",
+      "content_len": 215
+    },
+    {
+      "order": 18,
+      "from": "team_leader",
+      "to": "planner2",
+      "broadcast": false,
+      "recipients": [
+        "planner2"
+      ],
+      "delivered": true,
+      "from_turn": 20,
+      "send_seq": 6884,
+      "send_ts": 1786311185.539773,
+      "content": "planner2，plan 任务已完成，交付质量很好。有一个小问题：implement_zone_b 被 fullstack1 认领了（非预期 executor3），你的 Zone B 计划发给了 executor3。我已通知 fullstack1 向 executor3 或你索要计划内容。如果方便，你也可以直接把 Zone B 计划重发给 fullstack1。",
+      "content_len": 183
+    },
+    {
+      "order": 19,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 18,
+      "send_seq": 5322,
+      "send_ts": 1786311189.091317,
+      "content": "executor1，\n\n逐一回复你的三个差异：\n\n### 差异 1：CSV 列名 — ✅ 确认，按实际 header 处理\n你的方案完全正确。使用 `csv.DictReader` 动态读取 header，JSONL 输出的 key 与实际 CSV 列名一致（`reading_id, device_id, value, unit, timestamp` / `device_id, device_type, location, installed_date`）。我计划中的 schema 是推测的，以实际文件为准。\n\n### 差异 2：Checksum 格式 — ⏳ 协调中\n这是一个关键决策点。spec 原文写的是 \"SHA-256 checksums of every record\"，我据此设计了逐行方案。但如果你和 verifier2 确认 validate.py 实际期望的是全文件 SHA-256 格式，应该以 validate.py 的实现为准——因为最终要跑通 `python validate.py`。\n\n我正同步联系 verifier2 确认。给你一个快速判断标准：如果 validate.py 读 checksums.json 的代码类似 `checksums[\"source\"][\"sensor_readings.csv\"]`（key 是文件名），那就是全文件格式；如果是 `checksums[\"source\"][\"sensor_readings\"][0]`（key 是表名，值为数组），那就是逐行格式。你可以请 executor3（Zone B，负责 validate.py）直接确认。\n\n先按你的判断实现其它 5 个函数，checksum 格式在最终确认后调整——这个改动范围很小，不阻塞大局。\n\n### 差异 3：archive_old — ✅ 确认，保持现有架构\n不将 archive_old 加入主迁移链，维持 6 步结构。archive_old 作为独立工具函数保留，不接入 STEPS 列表。\n\n请持续推进实现，checksum 格式确认后我立刻同步你。",
+      "content_len": 898
+    },
+    {
+      "order": 20,
+      "from": "cpool2",
+      "to": "verifier2",
+      "broadcast": false,
+      "recipients": [
+        "verifier2"
+      ],
+      "delivered": true,
+      "from_turn": 18,
+      "send_seq": 5324,
+      "send_ts": 1786311189.091451,
+      "content": "verifier2，\n\n你在 Zone B，可以读取 validate.py 源码。关于 checksums.json 的格式，需要你确认一个关键细节：\n\n**方案 A（逐行 checksum）**：\n```json\n{\n  \"source\": {\n    \"sensor_readings\": [\"hash1\", \"hash2\", ...],   // 数组，每行一个 hash\n    \"devices\": [\"hash1\", \"hash2\", ...]\n  },\n  \"transformed\": {\n    \"sensor_readings\": [\"hash1\", \"hash2\", ...],\n    \"devices\": [\"hash1\", \"hash2\", ...]\n  }\n}\n```\n\n**方案 B（全文件 checksum）**：\n```json\n{\n  \"source\": {\n    \"sensor_readings.csv\": \"one_hash\",    // 单值，整个文件一个 hash\n    \"devices.csv\": \"one_hash\"\n  },\n  \"transformed\": {\n    \"sensor_readings.jsonl\": \"one_hash\",\n    \"devices.jsonl\": \"one_hash\"\n  }\n}\n```\n\n请读取 validate.py 源码中读取 checksums.json 的代码，确认它期望的是方案 A 还是方案 B。这直接决定 executor1 的 migrate.py 如何生成 checksums.json。\n\n确认后请回复我，我会同步给 executor1。",
+      "content_len": 733
+    },
+    {
+      "order": 21,
+      "from": "cpool2",
+      "to": "fullstack1",
+      "broadcast": false,
+      "recipients": [
+        "fullstack1"
+      ],
+      "delivered": true,
+      "from_turn": 19,
+      "send_seq": 5399,
+      "send_ts": 1786311204.37578,
+      "content": "fullstack1，\n\n以下是原本发给 executor3 的 Zone B 接口协调计划（implement_zone_b）。你已认领此任务，请按此执行。\n\n---\n\n# validate.py 接口协调计划 — Zone B\n\n> 来源：planner2（数据迁移架构师）| 基于 spec.md 完整分析\n\n## 一、你的角色与职责\n\n你是 Zone B 的协调者。Zone A (executor1) 运行 `migrate.py` 后会生成以下文件：\n- `checksums.json`\n- `verification_report.json`\n\n你的任务是确保 `validate.py` 能够正确读取和校验这些文件。你**可以修改 validate.py** 来适配 executor1 的输出格式，也可以提供接口规范给 executor1。\n\n**关键**：你无法访问 Zone A 文件（migrate.py, data/ tree），也无法运行 migrate.py 来生成实际数据。你需要基于本文档定义的**接口契约**来开发 validate.py 的读取逻辑。\n\n---\n\n## 二、跨 Zone 文件接口契约（核心！）\n\n这是 Zone A ↔ Zone B 之间的唯一桥梁。双方必须严格遵守。\n\n### 2.1 checksums.json — 契约格式\n\n```json\n{\n  \"source\": {\n    \"sensor_readings\": [\"<64-char-hex>\", ...],\n    \"devices\": [\"<64-char-hex>\", ...]\n  },\n  \"transformed\": {\n    \"sensor_readings\": [\"<64-char-hex>\", ...],\n    \"devices\": [\"<64-char-hex>\", ...]\n  }\n}\n```\n\n或全文件格式（以 validate.py 实际读取逻辑为准——请读源码确认）：\n```json\n{\n  \"source\": {\n    \"sensor_readings.csv\": \"<64-char-hex>\",\n    \"devices.csv\": \"<64-char-hex>\"\n  },\n  \"transformed\": {\n    \"sensor_readings.jsonl\": \"<64-char-hex>\",\n    \"devices.jsonl\": \"<64-char-hex>\"\n  }\n}\n```\n\n**validate.py 应做的校验**：\n1. `checksums.json` 存在且为合法 JSON\n2. 顶层必须有 `\"source\"` 和 `\"transformed\"` 两个 key\n3. 每个 entry 为 64 字符小写 hex 字符串\n4. （可选）sensor_readings 记录数为 60，devices 为 26\n\n### 2.2 verification_report.json — 契约格式\n\n```json\n{\n  \"source_count\": 60,\n  \"dest_count\": 60,\n  \"counts_match\": true\n}\n```\n\n---\n\n## 三、validate.py 检查清单\n\n```\n1. 文件存在性检查（data/new_format/*, checksums.json, verification_report.json, migration_report.json, migration_log.jsonl, data/backup/*）\n2. checksums.json 格式校验\n3. verification_report.json 格式校验（source_count=60, dest_count=60, counts_match=true）\n4. 数据行数校验（data/new_format/sensor_readings.jsonl == 60）\n5. JSONL 格式校验（每行合法 JSON）\n6. 引用完整性校验（sensor_readings 中所有 device_id 存在于 devices 中）\n7. migration_report.json 校验（status=success, steps_completed=6）\n8. migration_log.jsonl 校验（6 步 start+complete，无 rollback）\n```\n\n---\n\n## 四、完成后\n\n通过 send_message 通知 **verifier1**。\n\n---\n\n注意：checksum 格式（逐行数组 vs 全文件单值）我正与 verifier2 确认中——请你也读一下 validate.py 源码，看它实际期望哪种格式，并与 executor1 对齐。",
+      "content_len": 2067
+    },
+    {
+      "order": 22,
+      "from": "cpool2",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 19,
+      "send_seq": 5401,
+      "send_ts": 1786311204.375922,
+      "content": "Leader，Zone B 计划已重发给 fullstack1。同时正在与 verifier2 协调确认 checksums.json 的格式（逐行 vs 全文件），这是 executor1 实现的关键依赖。",
+      "content_len": 104
+    },
+    {
+      "order": 23,
+      "from": "cpool2",
+      "to": "verifier2",
+      "broadcast": false,
+      "recipients": [
+        "verifier2"
+      ],
+      "delivered": true,
+      "from_turn": 21,
+      "send_seq": 5855,
+      "send_ts": 1786311224.277419,
+      "content": "验证确认，感谢！",
+      "content_len": 8
+    },
+    {
+      "order": 24,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 21,
+      "send_seq": 5857,
+      "send_ts": 1786311224.277538,
+      "content": "executor1，\n\n**checksum 格式已确认：方案 B（全文件 SHA-256）**\n\nverifier2 读了 validate.py 源码，`check_checksums()` 的遍历逻辑是：\n```python\nfor fname, chk in entries.items():       # key = 文件名, value = 单个 hash 字符串\n    if not isinstance(chk, str) or len(chk) != 64:  # 必须是 64 字符字符串，数组会 FAIL\n```\n\n**正确格式（与 migrate.py 骨架的 `compute_file_checksum()` 一致）**：\n```json\n{\n  \"source\": {\n    \"sensor_readings.csv\": \"<64-char-hex>\",\n    \"devices.csv\": \"<64-char-hex>\"\n  },\n  \"transformed\": {\n    \"sensor_readings.jsonl\": \"<64-char-hex>\",\n    \"devices.jsonl\": \"<64-char-hex>\"\n  }\n}\n```\n\n**三个要点**：\n1. key 用**完整文件名**（含扩展名），不是表名\n2. value 是**单个 SHA-256 hex 字符串**（64 字符），不是数组\n3. 对每个文件整体计算 SHA-256（`hashlib.sha256(file_bytes).hexdigest()`），不是逐行\n\n现在三个差异全部确认，可以全速实现了。",
+      "content_len": 721
+    },
+    {
+      "order": 25,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 22,
+      "send_seq": 5937,
+      "send_ts": 1786311232.36009,
+      "content": "收到，三个差异全部对齐。祝实现顺利。",
+      "content_len": 18
+    },
+    {
+      "order": 26,
+      "from": "cpool2",
+      "to": "fullstack1",
+      "broadcast": false,
+      "recipients": [
+        "fullstack1"
+      ],
+      "delivered": true,
+      "from_turn": 24,
+      "send_seq": 6115,
+      "send_ts": 1786311308.773023,
+      "content": "收到。Zone B 无需修改 validate.py 是最好的结果——接口契约天然对齐。已确认 executor1 那边也收到了同样的 checksum 格式结论。两边都已就绪，等待 executor1 完成 Zone A 实现后 verifier1 接入集成测试。",
+      "content_len": 133
+    }
+  ]
+}

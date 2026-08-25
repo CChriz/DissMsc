@@ -1,0 +1,103 @@
+{
+  "verdict": "PASS",
+  "verifier": "verifier2",
+  "timestamp": "2026-08-09T19:31:24+01:00",
+  "spec_reference": "/srv/jwteam_clone/shared/run_current/spec/v_spec.md",
+  "implementation_file": "/srv/jwteam_clone/shared/run_current/workspace/app.py",
+  "test_summary": {
+    "total": 11,
+    "passed": 11,
+    "failed": 0,
+    "duration_seconds": 0.11,
+    "v1_compat_tests": 5,
+    "v2_regression_tests": 6
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "description": "GET /v1/users/1 返回 200，含 full_name，不含 display_name",
+      "status": "PASS",
+      "evidence": "app.py 第 88-94 行：v1_get_user(uid) 调用 v2_get_user(uid) 后执行 data.pop('display_name') → data['full_name']；test_e1_v1_uses_old_field_name PASSED"
+    },
+    {
+      "id": "AC-2",
+      "description": "GET /v1/users/1/preferences 返回 200，平面 v1 结构",
+      "status": "PASS",
+      "evidence": "app.py 第 98-105 行：v1_get_preferences(uid) 调用 v2_get_preferences(uid) 后提取 data.get('preferences', {}) 展平；test_e2_v1_flat_response PASSED"
+    },
+    {
+      "id": "AC-3",
+      "description": "GET /v1/users/search（无参数）返回 200",
+      "status": "PASS",
+      "evidence": "app.py 第 109-117 行：v1_search_users() 通过 request.args.get('page', '1') 注入默认值；test_e3_v1_no_param_required PASSED"
+    },
+    {
+      "id": "AC-4",
+      "description": "GET /v1/users/1/tokens 返回 404（不存在 shim）",
+      "status": "PASS",
+      "evidence": "app.py 第 120-121 行明确标注不添加 shim；无 /v1/users/<int:uid>/tokens 路由；test_e4_no_v1_shim PASSED"
+    },
+    {
+      "id": "AC-5",
+      "description": "GET /v1/users/legacy_export 返回 404（过期 shim 已移除）",
+      "status": "PASS",
+      "evidence": "app.py 中 v1_legacy_export 路由和函数已完全删除；test_e5_stale_shim_removed PASSED"
+    },
+    {
+      "id": "AC-6",
+      "description": "所有 v2 端点回归正常",
+      "status": "PASS",
+      "evidence": "test_v2_endpoints.py 全部 6 条通过：E1 display_name 正确 / E2 嵌套响应正常 / E3 需要 page 参数 / E3 带参数正常 / E4 需要认证 / E4 带 Bearer token 正常"
+    },
+    {
+      "id": "AC-7",
+      "description": "pytest tests/ 全部通过",
+      "status": "PASS",
+      "evidence": "11 passed in 0.11s，零失败"
+    }
+  ],
+  "shim_verification": [
+    {
+      "endpoint": "E1",
+      "v1_path": "/v1/users/<int:uid>",
+      "action": "ADD shim",
+      "status": "PASS",
+      "details": "v1_get_user(uid) 调用 v2_get_user(uid)，将 display_name 重命名为 full_name，非 200 状态码透传"
+    },
+    {
+      "endpoint": "E2",
+      "v1_path": "/v1/users/<int:uid>/preferences",
+      "action": "ADD shim",
+      "status": "PASS",
+      "details": "v1_get_preferences(uid) 调用 v2_get_preferences(uid)，提取 preferences 子对象展平为平面结构"
+    },
+    {
+      "endpoint": "E3",
+      "v1_path": "/v1/users/search",
+      "action": "ADD shim",
+      "status": "PASS",
+      "details": "v1_search_users() 通过 request.args.get('page', '1') 注入默认值 page=1"
+    },
+    {
+      "endpoint": "E4",
+      "v1_path": "/v1/users/<int:uid>/tokens",
+      "action": "NO shim",
+      "status": "PASS",
+      "details": "确认未添加 v1 shim，安全原因：v1 返回 tokens 无认证检查，v2 需要 Bearer token"
+    },
+    {
+      "endpoint": "E5",
+      "v1_path": "/v1/users/legacy_export",
+      "action": "REMOVE shim",
+      "status": "PASS",
+      "details": "v1_legacy_export 路由和函数已完全从 app.py 删除"
+    }
+  ],
+  "code_quality_notes": [
+    "E1 shim 正确处理了非 200 状态码的透传（resp.status_code 检查 + jsonify 携带状态码）",
+    "E2 shim 正确处理了 200 时展平、非 200 时透传原始响应",
+    "E3 shim 直接复用了与 v2 相同的查询逻辑，避免 DRY 违规",
+    "E4 / E5 注释清晰说明了不添加/移除的原因",
+    "v2 端点代码完全未被修改，回归风险为零"
+  ]
+}

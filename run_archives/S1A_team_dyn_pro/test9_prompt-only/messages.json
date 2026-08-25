@@ -1,0 +1,65 @@
+{
+  "messages": [
+    {
+      "order": 0,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 6,
+      "send_seq": 949,
+      "send_ts": 1786143324.791248,
+      "content": "Team TEST9 is now active. Three tasks are on the board:\n\n1. **#plan** (planner1): Read spec/spec.md and workspace/service.py, produce a self-contained implementation plan, and deliver it to executor1 via send_message.\n2. **#implement** (executor1, blocked by #plan): Implement test_service.py and fix service.py following planner1's plan. Verify `python -m pytest test_service.py -v` passes, then notify verifier1.\n3. **#verify** (verifier1, blocked by #implement): Verify all work against spec/spec.md and write attestation.json with pass/fail verdict.\n\nAll other members (planner2, executor2, executor3, verifier2, fullstack1) — standby for now. The DAG is linear: plan → implement → verify. Proceed.",
+      "content_len": 702
+    },
+    {
+      "order": 1,
+      "from": "cpool2",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 2,
+      "send_seq": 504,
+      "send_ts": 1786143332.902389,
+      "content": "收到。plan 任务已由 planner1 认领，implement 和 verify 均处阻塞状态。我将按指示 standby，等待后续分配或协调需要。如有需要 Planner #2 支援的规划类工作（如方案审查、补充分析等），随时调度。",
+      "content_len": 120
+    },
+    {
+      "order": 2,
+      "from": "cpool1",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 5,
+      "send_seq": 1400,
+      "send_ts": 1786143396.235728,
+      "content": "Executor 1，以下是自包含的实现方案，你无需阅读 spec.md。方案原文也已写入 `/srv/jwteam_clone/shared/run_current/brief.md`。\n\n---\n\n# 实现方案：service.py Mock测试\n\n## 1. 修复 service.py 中的 send_notification\n\n`send_notification()` 当前缺少 try/except。请按如下修改：\n\n```python\ndef send_notification(user_id: str, message: str) -> dict:\n    try:\n        response = requests.post(\n            BASE_NOTIFY_URL,\n            json={\"user_id\": user_id, \"message\": message},\n            timeout=5,\n        )\n        response.raise_for_status()\n        return response.json()\n    except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):\n        return {\"status\": \"error\", \"reason\": \"timeout\"}\n```\n\n关键点：用 try 包裹整个 `requests.post(...)` 块，捕获 `Timeout` 和 `ConnectionError`，返回 `{\"status\": \"error\", \"reason\": \"timeout\"}`。\n\n## 2. Mock 策略\n\n所有测试使用 `unittest.mock.patch`，目标路径：\n- `service.requests.get` — 对应 `get_user()` 和 `get_weather()`\n- `service.requests.post` — 对应 `send_notification()`\n\nMock 响应对象需要：\n- `.raise_for_status()` → `Mock(return_value=None)` 或无操作 lambda\n- `.json()` → 返回预期的测试数据 dict\n\n## 3. 测试用例（共 10 个）\n\n### Test 1: `test_get_user_calls_correct_endpoint`\n- Mock `requests.get` → `{\"id\": \"42\", \"name\": \"Alice\"}`\n- 调用 `service.get_user(\"42\")`\n- 断言：`requests.get` 被调用 1 次，URL 为 `https://api.users.example.com/v1/users/42`，`timeout=10`\n\n### Test 2: `test_get_user_returns_expected_shape`\n- Mock `requests.get` → `{\"id\": \"99\", \"name\": \"Bob\", \"email\": \"bob@test.com\"}`\n- 调用 `result = service.get_user(\"99\")`\n- 断言：`result == {\"id\": \"99\", \"name\": \"Bob\", \"email\": \"bob@test.com\"}`\n- 断言：`\"id\" in result`, `\"name\" in result`, `\"email\" in result`\n\n### Test 3: `test_get_weather_calls_correct_endpoint`\n- Mock `requests.get` → `{\"city\": \"London\", \"temp\": 55}`\n- 调用 `service.get_weather(\"London\")`\n- 断言：`requests.get` 被调用 1 次，第一个参数为 `https://api.weather.example.com/v2/current`\n- 断言：kwargs 中 `params={\"city\": \"London\"}`，`timeout=10`\n\n### Test 4: `test_get_weather_returns_expected_shape`\n- Mock `requests.get` → `{\"city\": \"Tokyo\", \"temp\": 80, \"condition\": \"cloudy\"}`\n- 调用 `result = service.get_weather(\"Tokyo\")`\n- 断言：`result[\"city\"] == \"Tokyo\"`, `result[\"temp\"] == 80`, `result[\"condition\"] == \"cloudy\"`\n\n### Test 5: `test_send_notification_success_calls_correct_endpoint`\n- Mock `requests.post` → `{\"status\": \"ok\", \"message_id\": \"abc\"}`\n- 调用 `service.send_notification(\"user1\", \"Hello!\")`\n- 断言：`requests.post` 被调用 1 次，URL 为 `https://api.notify.example.com/v1/send`\n- 断言：kwargs 中 `json={\"user_id\": \"user1\", \"message\": \"Hello!\"}`，`timeout=5`\n\n### Test 6: `test_send_notification_success_returns_response`\n- Mock `requests.post` → `{\"status\": \"ok\", \"message_id\": \"xyz789\"}`\n- 调用 `result = service.send_notification(\"u2\", \"Test msg\")`\n- 断言：`result == {\"status\": \"ok\", \"message_id\": \"xyz789\"}`\n\n### Test 7: `test_send_notification_handles_timeout`\n- Mock `requests.post` → `side_effect=requests.exceptions.Timeout()`\n- 调用 `result = service.send_notification(\"u3\", \"msg\")`\n- 断言：`result == {\"status\": \"error\", \"reason\": \"timeout\"}`，**不抛异常（不崩溃）**\n\n### Test 8: `test_send_notification_handles_connection_error`\n- Mock `requests.post` → `side_effect=requests.exceptions.ConnectionError()`\n- 调用 `result = service.send_notification(\"u4\", \"msg\")`\n- 断言：`result == {\"status\": \"error\", \"reason\": \"timeout\"}`，**不抛异常（不崩溃）**\n\n### Test 9: `test_get_user_different_ids`\n- Mock `requests.get`，根据 user_id 返回不同数据（\"1\" → Alice，\"2\" → Bob）\n- 分别调用 `service.get_user(\"1\")` 和 `service.get_user(\"2\")`\n- 断言：两次调用 URL 分别对应 \"1\" 和 \"2\"，返回值不同\n\n### Test 10: `test_process_user_weather_integration`\n- 同时 mock `requests.get` 和 `requests.post`（使用堆叠装饰器 `@patch(\"service.requests.post\")` + `@patch(\"service.requests.get\")`）\n- `requests.get` 使用 `side_effect` 在第 1 次返回 user 数据、第 2 次返回 weather 数据\n- `requests.post` 返回 `{\"status\": \"ok\", \"message_id\": \"n_1\"}`\n- 调用 `result = service.process_user_weather(\"42\", \"Paris\")`\n- 断言：`result[\"user\"][\"name\"]` 存在，`result[\"weather\"][\"temp\"]` 存在\n- 断言：`result[\"notification\"][\"status\"] == \"ok\"`\n\n## 4. 实施要点\n\n- 文件路径：`/srv/jwteam_clone/shared/run_current/workspace/test_service.py`\n- 使用 `import service` 和 `from unittest.mock import patch, Mock`\n- 可选用 `import pytest`（非必须）\n- 每个测试使用 `@patch(\"service.requests.get\")` 或 `@patch(\"service.requests.post\")` 装饰器\n- 集成测试使用堆叠装饰器：`@patch(\"service.requests.post\")` 在内层（先传参），`@patch(\"service.requests.get\")` 在外层（后传参）\n- 所有 mock 响应的 `.raise_for_status` 设为 `Mock(return_value=None)`\n\n## 5. 验证\n\n```bash\ncd /srv/jwteam_clone/shared/run_current/workspace && python -m pytest test_service.py -v\n```\n\n预期：10 个测试全部通过，0 个失败。\n\n完成后请通过 `send_message(to=\"verifier1\", ...)` 通知验证者。",
+      "content_len": 4536
+    },
+    {
+      "order": 3,
+      "from": "cpool1",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 1636,
+      "send_ts": 1786143414.35434,
+      "content": "#plan 任务已完成。\n\n已完成以下工作：\n1. ✅ 读取了 `/srv/jwteam_clone/shared/run_current/spec/spec.md` 完整规格\n2. ✅ 分析了 `/srv/jwteam_clone/shared/run_current/workspace/service.py` 现有代码\n3. ✅ 产出了自包含的实现方案，覆盖：\n   - `send_notification` 的 try/except 修复方案（捕获 Timeout + ConnectionError）\n   - 全部 3 个 API 的 mock 策略（`unittest.mock.patch` 目标路径）\n   - 10 个测试用例（超出最低 8 个的要求），每个都包含 mock 策略和断言说明\n4. ✅ 方案已写入 `brief.md` 并通过 `send_message` 交付给 executor1\n5. ✅ DAG 的 #implement 任务现已解除阻塞，executor1 可以开始工作\n\n后续流水线：executor1 实现 → verifier1 验证。",
+      "content_len": 495
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "verdict": "PASS",
+  "verifier": "verifier1",
+  "timestamp": "2026-08-10T04:07:00+01:00",
+  "summary": "All 6 bugs fixed and verified. 12/12 tests pass.",
+  "test_results": {
+    "total": 12,
+    "passed": 12,
+    "failed": 0,
+    "skipped": 0
+  },
+  "bugs": [
+    {
+      "id": "bug-1",
+      "title": "int64 truncation",
+      "file": "bridge/translator.py",
+      "fix": "Removed '& 0xFFFFFFFF' mask on event_id. Value now preserved as full-precision Python int.",
+      "spec_ref": "int64 fields must be translated as Python int (no truncation to 32-bit)",
+      "test": "test_int64_not_truncated",
+      "status": "PASS"
+    },
+    {
+      "id": "bug-2",
+      "title": "bytes base64 not decoded",
+      "file": "bridge/translator.py",
+      "fix": "Added base64.b64decode() to payload field. Returns raw bytes instead of base64 string.",
+      "spec_ref": "bytes fields must be base64-decoded from JSON strings",
+      "test": "test_bytes_field_base64_decoded",
+      "status": "PASS"
+    },
+    {
+      "id": "bug-3",
+      "title": "oneof multiple variants set",
+      "file": "bridge/translator.py",
+      "fix": "Changed to if/elif for mutually exclusive oneof variant assignment. binary_content also receives base64.b64decode().",
+      "spec_ref": "oneof fields must have exactly one variant set (not multiple)",
+      "test": "test_oneof_single_variant_text, test_oneof_single_variant_empty",
+      "status": "PASS"
+    },
+    {
+      "id": "bug-4",
+      "title": "enum string not mapped to int",
+      "file": "bridge/translator.py",
+      "fix": "Uses STATUS_MAP.get() to convert string enum names to integer codes. Falls back to 0 (STATUS_UNKNOWN).",
+      "spec_ref": "enum fields must be mapped from string names to integer values",
+      "test": "test_enum_mapped_to_int",
+      "status": "PASS"
+    },
+    {
+      "id": "bug-5",
+      "title": "HTTP 404 mapped to wrong error code",
+      "file": "bridge/error_mapper.py",
+      "fix": "Changed 404 mapping from ErrorCode.INVALID_ARGUMENT (3) to ErrorCode.NOT_FOUND (5). Uses HTTP_TO_GRPC_MAP exact-match table.",
+      "spec_ref": "HTTP 404 from Service A must map to NOT_FOUND error code (5) for Service B",
+      "test": "test_404_maps_to_not_found",
+      "status": "PASS"
+    },
+    {
+      "id": "bug-6",
+      "title": "HTTP 429 mapped to wrong error code",
+      "file": "bridge/error_mapper.py",
+      "fix": "Changed 429 mapping from ErrorCode.INTERNAL (13) to ErrorCode.RESOURCE_EXHAUSTED (8). Uses HTTP_TO_GRPC_MAP exact-match table.",
+      "spec_ref": "HTTP 429 from Service A must map to RESOURCE_EXHAUSTED error code (8) for Service B",
+      "test": "test_429_maps_to_resource_exhausted",
+      "status": "PASS"
+    }
+  ],
+  "e2e_tests": [
+    {
+      "test": "test_e2e_translate_and_consume",
+      "description": "Full pipeline: JSON → translate → consume without errors. Verifies int64, base64, oneof, and enum all work together.",
+      "status": "PASS"
+    },
+    {
+      "test": "test_e2e_error_routing",
+      "description": "Error path: HTTP 404 and 429 reach consumer with NOT_FOUND and RESOURCE_EXHAUSTED codes.",
+      "status": "PASS"
+    }
+  ],
+  "code_review_notes": {
+    "translator.py": "All 4 fixes correctly implemented. if/elif pattern properly ensures oneof exclusivity. Base64 decoding correct for both payload and binary_content.",
+    "error_mapper.py": "HTTP_TO_GRPC_MAP exact-match table correctly prioritizes 404/429 before fallback 4xx/5xx rules. All code paths verified."
+  }
+}

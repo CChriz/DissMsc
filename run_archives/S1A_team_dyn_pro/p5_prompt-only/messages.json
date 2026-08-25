@@ -1,0 +1,81 @@
+{
+  "messages": [
+    {
+      "order": 0,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 1871,
+      "send_ts": 1786143633.121704,
+      "content": "P5 Audit Logging 任务启动。\n\n任务分工：\n- **plan-audit** → planner2（已认领执行中）：阅读 spec/spec.md，产出实现方案，通过 send_message 发送给 executor1\n- **impl-audit** → executor1（锁定，依赖 plan-audit）：接收 planner2 的方案后，在 /srv/jwteam_clone/shared/run_current/workspace 实现 audit.py 和 app.py 集成，完成后通知 verifier1\n- **verify-audit** → verifier1（锁定，依赖 impl-audit）：对照 spec/spec.md 全面验证，运行测试，将裁决写入 /srv/jwteam_clone/shared/run_current/attestation.json\n\n其余成员 standby 待命。plan-audit 完成后 impl-audit 自动解锁，以此类推。开始吧。",
+      "content_len": 464
+    },
+    {
+      "order": 1,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 5,
+      "send_seq": 1519,
+      "send_ts": 1786143660.273682,
+      "content": "# Audit Logging 实现方案\n\n## 概述\n在 `audit.py` 中实现 HMAC-SHA256 签名的审计日志系统，支持 5 种事件类型，并在 `app.py` 的 5 个端点中集成。所有条目存储在内存列表 `_AUDIT_LOG` 中。\n\n---\n\n## 一、audit.py 实现要点\n\n### 1.1 预定义常量\n\n```python\n# 5 种合法事件类型\nVALID_EVENT_TYPES = {\n    \"config_changed\", \"user_login\", \"report_accessed\",\n    \"data_exported\", \"payment_initiated\"\n}\n\n# 每种事件类型的必需字段（包含 universal 的 event_type + log_id）\nREQUIRED_FIELDS = {\n    \"config_changed\":    [\"event_type\", \"log_id\", \"user_id\", \"timestamp\", \"config_key\", \"old_value\", \"new_value\", \"user_agent\"],\n    \"user_login\":        [\"event_type\", \"log_id\", \"user_id\", \"timestamp\", \"ip_address\", \"success\", \"correlation_id\"],\n    \"report_accessed\":   [\"event_type\", \"log_id\", \"user_id\", \"timestamp\", \"report_id\", \"report_type\", \"request_id\"],\n    \"data_exported\":     [\"event_type\", \"log_id\", \"user_id\", \"timestamp\", \"export_format\", \"record_count\", \"destination\", \"user_agent\"],\n    \"payment_initiated\": [\"event_type\", \"log_id\", \"user_id\", \"timestamp\", \"amount\", \"currency\", \"recipient_account\", \"session_id\"],\n}\n```\n\n### 1.2 log_event(event_type, **fields) -> dict\n\n**步骤：**\n1. 校验 `event_type` 是否在 `VALID_EVENT_TYPES` 中，否则 `raise ValueError`\n2. 构建 entry dict：\n   - `event_type`: 参数值\n   - `log_id`: `str(uuid.uuid4())`\n   - 合并调用者传入的 `**fields`\n3. 校验 entry 包含该事件类型所有必需字段（`REQUIRED_FIELDS[event_type]`），缺失则 `raise ValueError`\n4. 计算签名：调用 `_compute_signature(entry)` 得到 HMAC-SHA256 十六进制字符串\n5. `entry[\"signature\"] = sig`\n6. `_AUDIT_LOG.append(entry)`\n7. `return entry`\n\n### 1.3 get_log() -> list[dict]\n直接返回 `list(_AUDIT_LOG)`（已实现，无需修改）。\n\n### 1.4 verify_log(entries) -> list[int]\n\n**步骤：**\n1. 初始化空列表 `tampered_indices`\n2. 遍历 `enumerate(entries)`：\n   - 若条目中没有 `signature` 字段 → 将 index 加入 `tampered_indices`；continue\n   - 取出原签名 `original_sig = entry[\"signature\"]`\n   - 重新计算 `expected_sig = _compute_signature(entry)` （注意：`_compute_signature` 内部会排除 `signature` 字段）\n   - 若 `expected_sig != original_sig` → 将 index 加入 `tampered_indices`\n3. 返回 `tampered_indices`\n\n### 1.5 _compute_signature(entry: dict) -> str（内部辅助函数）\n\n**规范要求：** 对 entry 的 canonical JSON 做 HMAC-SHA256 签名，HMAC key 来自环境变量 `AUDIT_HMAC_KEY`（默认 `\"default-key\"`）。\n\n**实现步骤：**\n1. 从 entry 中排除 `signature` 字段，构建 `payload = {k: v for k, v in entry.items() if k != \"signature\"}`\n2. 对 payload 按键名字母序排列（`sort_keys=True`），生成紧凑 JSON（`separators=(\",\", \":\")`，无空格）\n3. 获取 HMAC key：`key = os.environ.get(\"AUDIT_HMAC_KEY\", \"default-key\").encode(\"utf-8\")`\n4. 计算 HMAC-SHA256：`hmac.new(key, canonical_json.encode(\"utf-8\"), hashlib.sha256).hexdigest()`\n5. 返回十六进制签名字符串\n\n**关键注意点：**\n- canonical JSON 使用 `json.dumps(payload, sort_keys=True, separators=(\",\", \":\"))`\n- `ensure_ascii` 默认 `True`，可保持默认\n- 签名字段名严格为 `\"signature\"`（全小写）\n\n---\n\n## 二、5 种事件类型的完整字段清单\n\n### config_changed（配置变更）\n| 字段 | 来源 | 说明 |\n|------|------|------|\n| event_type | 自动 | 固定值 \"config_changed\" |\n| log_id | 自动 | UUID4 |\n| user_id | 调用者 | 操作用户 ID |\n| timestamp | 调用者 | 事件时间戳 |\n| config_key | 调用者 | 变更的配置键 |\n| old_value | 调用者 | 旧值 |\n| new_value | 调用者 | 新值 |\n| user_agent | 调用者 | 用户代理 |\n| signature | 自动 | HMAC-SHA256 签名 |\n\n### user_login（用户登录）\n| 字段 | 来源 | 说明 |\n|------|------|------|\n| event_type | 自动 | \"user_login\" |\n| log_id | 自动 | UUID4 |\n| user_id | 调用者 | |\n| timestamp | 调用者 | |\n| ip_address | 调用者 | |\n| success | 调用者 | |\n| correlation_id | 调用者 | |\n| signature | 自动 | |\n\n### report_accessed（报告访问）\n| 字段 | 来源 | 说明 |\n|------|------|------|\n| event_type | 自动 | \"report_accessed\" |\n| log_id | 自动 | UUID4 |\n| user_id | 调用者 | |\n| timestamp | 调用者 | |\n| report_id | 调用者 | |\n| report_type | 调用者 | |\n| request_id | 调用者 | |\n| signature | 自动 | |\n\n### data_exported（数据导出）\n| 字段 | 来源 | 说明 |\n|------|------|------|\n| event_type | 自动 | \"data_exported\" |\n| log_id | 自动 | UUID4 |\n| user_id | 调用者 | |\n| timestamp | 调用者 | |\n| export_format | 调用者 | |\n| record_count | 调用者 | |\n| destination | 调用者 | |\n| user_agent | 调用者 | |\n| signature | 自动 | |\n\n### payment_initiated（支付发起）\n| 字段 | 来源 | 说明 |\n|------|------|------|\n| event_type | 自动 | \"payment_initiated\" |\n| log_id | 自动 | UUID4 |\n| user_id | 调用者 | |\n| timestamp | 调用者 | |\n| amount | 调用者 | |\n| currency | 调用者 | |\n| recipient_account | 调用者 | |\n| session_id | 调用者 | |\n| signature | 自动 | |\n\n---\n\n## 三、HMAC-SHA256 签名计算方法\n\n### 3.1 Canonical JSON 生成规则\n1. 从 entry dict 中移除 `\"signature\"` key\n2. 按键名进行字母序排序（`sort_keys=True`）\n3. 生成紧凑 JSON：无缩进、键值间无空格（`separators=(\",\", \":\")`）\n4. 确保 JSON 字符串为 UTF-8 字节\n\n### 3.2 签名计算\n```\ncanonical_bytes = canonical_json.encode(\"utf-8\")\nhmac_key = os.environ.get(\"AUDIT_HMAC_KEY\", \"default-key\").encode(\"utf-8\")\nsignature = hmac.new(hmac_key, canonical_bytes, hashlib.sha256).hexdigest()\n```\n\n### 3.3 示例\n假设 entry = `{\"event_type\": \"user_login\", \"log_id\": \"abc123\", \"user_id\": \"u1\", \"timestamp\": \"2024-01-01T00:00:00Z\", \"ip_address\": \"1.2.3.4\", \"success\": true, \"correlation_id\": \"corr-1\"}`\n\nCanonical JSON 为：\n```\n{\"correlation_id\":\"corr-1\",\"event_type\":\"user_login\",\"ip_address\":\"1.2.3.4\",\"log_id\":\"abc123\",\"success\":true,\"timestamp\":\"2024-01-01T00:00:00Z\",\"user_id\":\"u1\"}\n```\n\n然后对该字节串做 HMAC-SHA256 得到十六进制签名。\n\n---\n\n## 四、app.py 端点集成\n\n修改 `/config-changed`、`/user-login`、`/report-accessed`、`/data-exported`、`/payment-initiated` 这 5 个 POST 端点，在 return 之前调用 `audit.log_event()`。\n\n### 具体修改（以 config_changed 为例）\n```python\n@app.route('/config-changed', methods=['POST'])\ndef config_changed():\n    data = request.get_json() or {}\n    audit.log_event('config_changed', **data)\n    return jsonify({'status': 'ok', 'event': 'config_changed'}), 200\n```\n\n**5 个端点对应的事件类型映射：**\n| 端点路由 | event_type |\n|----------|-----------|\n| `/config-changed` | `\"config_changed\"` |\n| `/user-login` | `\"user_login\"` |\n| `/report-accessed` | `\"report_accessed\"` |\n| `/data-exported` | `\"data_exported\"` |\n| `/payment-initiated` | `\"payment_initiated\"` |\n\n**注意事项：**\n- 请求体 JSON 字段名必须与 `REQUIRED_FIELDS` 中定义的一致\n- `audit.log_event()` 返回的 entry 不需要使用（端点只返回 status ok）\n- 已有的 `/audit-log` 和 `/verify-log` 端点无需修改\n\n---\n\n## 五、完整 audit.py 伪代码框架\n\n```python\nimport uuid\nimport hashlib\nimport hmac\nimport json\nimport os\nfrom typing import Any\n\nVALID_EVENT_TYPES = {\"config_changed\", \"user_login\", \"report_accessed\", \"data_exported\", \"payment_initiated\"}\n\nREQUIRED_FIELDS = {\n    \"config_changed\":    [\"event_type\", \"log_id\", \"user_id\", \"timestamp\", \"config_key\", \"old_value\", \"new_value\", \"user_agent\"],\n    \"user_login\":        [\"event_type\", \"log_id\", \"user_id\", \"timestamp\", \"ip_address\", \"success\", \"correlation_id\"],\n    \"report_accessed\":   [\"event_type\", \"log_id\", \"user_id\", \"timestamp\", \"report_id\", \"report_type\", \"request_id\"],\n    \"data_exported\":     [\"event_type\", \"log_id\", \"user_id\", \"timestamp\", \"export_format\", \"record_count\", \"destination\", \"user_agent\"],\n    \"payment_initiated\": [\"event_type\", \"log_id\", \"user_id\", \"timestamp\", \"amount\", \"currency\", \"recipient_account\", \"session_id\"],\n}\n\n_AUDIT_LOG: list[dict] = []\n\ndef _compute_signature(entry: dict) -> str:\n    payload = {k: v for k, v in entry.items() if k != \"signature\"}\n    canonical = json.dumps(payload, sort_keys=True, separators=(\",\", \":\"))\n    key = os.environ.get(\"AUDIT_HMAC_KEY\", \"default-key\").encode(\"utf-8\")\n    return hmac.new(key, canonical.encode(\"utf-8\"), hashlib.sha256).hexdigest()\n\ndef log_event(event_type: str, **fields: Any) -> dict:\n    if event_type not in VALID_EVENT_TYPES:\n        raise ValueError(f\"Unknown event_type: {event_type}\")\n    entry = {\"event_type\": event_type, \"log_id\": str(uuid.uuid4())}\n    entry.update(fields)\n    for f in REQUIRED_FIELDS[event_type]:\n        if f not in entry:\n            raise ValueError(f\"Missing required field '{f}' for event_type '{event_type}'\")\n    entry[\"signature\"] = _compute_signature(entry)\n    _AUDIT_LOG.append(entry)\n    return entry\n\ndef get_log() -> list[dict]:\n    return list(_AUDIT_LOG)\n\ndef verify_log(entries: list[dict]) -> list[int]:\n    tampered = []\n    for i, entry in enumerate(entries):\n        if \"signature\" not in entry:\n            tampered.append(i)\n            continue\n        original = entry[\"signature\"]\n        expected = _compute_signature(entry)\n        if not hmac.compare_digest(expected, original):\n            tampered.append(i)\n    return tampered\n```\n\n---\n\n## 六、实现检查清单\n\n- [ ] `log_event()` 校验 event_type 有效性，无效则抛 ValueError\n- [ ] `log_event()` 校验所有必需字段，缺失则抛 ValueError\n- [ ] `log_event()` 生成 UUID4 作为 log_id\n- [ ] `log_event()` 计算 HMAC-SHA256 签名（canonical JSON，key 排序，排除 signature）\n- [ ] `log_event()` 将条目追加到 `_AUDIT_LOG`\n- [ ] `get_log()` 返回 `list(_AUDIT_LOG)` 副本\n- [ ] `verify_log()` 正确检测缺失 signature 的条目\n- [ ] `verify_log()` 正确检测 signature 被篡改的条目\n- [ ] `verify_log()` 使用 `hmac.compare_digest` 防止时序攻击\n- [ ] `verify_log([])` 返回 `[]`\n- [ ] app.py 5 个端点均已调用 `audit.log_event()`\n- [ ] 运行 `pytest tests/test_audit.py -v` 全部通过",
+      "content_len": 8612
+    },
+    {
+      "order": 2,
+      "from": "cpool2",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 1657,
+      "send_ts": 1786143673.151186,
+      "content": "plan-audit 已完成。实现方案已通过 send_message 发送给 executor1。\n\n方案覆盖：\n1. **audit.py 三个函数**：log_event()（校验事件类型+必需字段+签名+存储）、get_log()（返回内存日志）、verify_log()（使用 hmac.compare_digest 逐条校验）\n2. **5 种事件类型字段清单**：config_changed / user_login / report_accessed / data_exported / payment_initiated，各自完整字段表\n3. **HMAC-SHA256 签名方法**：exclude signature → sort_keys → compact JSON → HMAC-SHA256 with AUDIT_HMAC_KEY env var\n4. **app.py 集成**：5 个 POST 端点各自调用对应 audit.log_event()\n\nexecutor1 收到方案后可立即开始 impl-audit。",
+      "content_len": 476
+    },
+    {
+      "order": 3,
+      "from": "cpool2",
+      "to": "verifier1",
+      "broadcast": false,
+      "recipients": [
+        "verifier1"
+      ],
+      "delivered": true,
+      "from_turn": 9,
+      "send_seq": 2173,
+      "send_ts": 1786143715.444702,
+      "content": "verify-audit 任务已解锁，状态为 pending，现在可以认领了。executor1 的 impl-audit 已完成，audit.py 和 app.py 的实现已就绪，可对照 /srv/jwteam_clone/shared/run_current/spec/spec.md 进行验证，并将裁决写入 /srv/jwteam_clone/shared/run_current/attestation.json。",
+      "content_len": 211
+    },
+    {
+      "order": 4,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 16,
+      "send_seq": 2888,
+      "send_ts": 1786143771.128055,
+      "content": "本轮 P5 Audit Logging 任务全部完成，最终裁决：PASS ✅\n\n工作总结：\n- plan-audit (planner2): 完成实现方案，覆盖全部函数签名、字段定义、签名算法和集成方式\n- impl-audit (executor1): 实现 audit.py（log_event/get_log/verify_log + HMAC-SHA256 签名 + 5 种事件类型字段校验）和 app.py（5 个端点集成），20 个测试全部通过\n- verify-audit (verifier1): 对照 spec/spec.md 完成全面验证，attestation.json 裁决 PASS，所有检查项均通过\n\n团队进入待命状态，等待下一轮任务指令。",
+      "content_len": 334
+    }
+  ]
+}

@@ -1,0 +1,121 @@
+{
+  "verifier": "verifier1",
+  "timestamp": "2026-08-07T23:50:00+01:00",
+  "overall_verdict": "PASS",
+  "summary": "All 20 requirements verified: 12/12 MUST passed, 5/5 SHOULD passed, 3/3 MAY passed.",
+  "score": {
+    "formula": "(MUST_passed/12 * 0.6) + (SHOULD_passed/5 * 0.3) + (MAY_passed/3 * 0.1)",
+    "must_score": 0.6,
+    "should_score": 0.3,
+    "may_score": 0.1,
+    "total": 1.0
+  },
+  "requirements": {
+    "M1": {
+      "title": "SET command stores value",
+      "verdict": "PASS",
+      "evidence": "_cmd_set parses '<key> <value>', stores in self._data, returns 'OK'."
+    },
+    "M2": {
+      "title": "GET returns value or ERR key_not_found",
+      "verdict": "PASS",
+      "evidence": "_cmd_get checks existence (including expiry), returns value or 'ERR key_not_found'."
+    },
+    "M3": {
+      "title": "DEL removes key, ERR key_not_found if missing",
+      "verdict": "PASS",
+      "evidence": "_cmd_del deletes key and expiry, returns 'OK' or 'ERR key_not_found'."
+    },
+    "M4": {
+      "title": "KEYS lists all keys terminated by END",
+      "verdict": "PASS",
+      "evidence": "_cmd_keys returns active keys newline-separated, ended with 'END'; empty store returns 'END' only."
+    },
+    "M5": {
+      "title": "COUNT returns COUNT <n>",
+      "verdict": "PASS",
+      "evidence": "_cmd_count counts non-expired keys and returns 'COUNT <n>'."
+    },
+    "M6": {
+      "title": "EXISTS returns TRUE or FALSE",
+      "verdict": "PASS",
+      "evidence": "_cmd_exists returns 'TRUE' if key present and not expired, 'FALSE' otherwise."
+    },
+    "M7": {
+      "title": "FLUSH clears all keys, returns OK",
+      "verdict": "PASS",
+      "evidence": "_cmd_flush clears both self._data and self._expiry, returns 'OK'."
+    },
+    "M8": {
+      "title": "OK for successful SET and DEL",
+      "verdict": "PASS",
+      "evidence": "Both _cmd_set and _cmd_del return 'OK' on success."
+    },
+    "M9": {
+      "title": "ERR unknown_command for unrecognized commands",
+      "verdict": "PASS",
+      "evidence": "execute() returns 'ERR unknown_command' for empty input, unknown commands, and malformed commands with wrong arg count."
+    },
+    "M10": {
+      "title": "Maximum key length enforcement (ERR key_too_long)",
+      "verdict": "PASS",
+      "evidence": "_cmd_set checks 'len(key) > self.MAX_KEY_LENGTH' (64) and returns 'ERR key_too_long'."
+    },
+    "M11": {
+      "title": "Maximum value size enforcement (ERR value_too_large)",
+      "verdict": "PASS",
+      "evidence": "_cmd_set checks 'len(value) > self.MAX_VALUE_SIZE' (1024) and returns 'ERR value_too_large'."
+    },
+    "M12": {
+      "title": "Maximum stored keys enforcement (ERR store_full); updates allowed",
+      "verdict": "PASS",
+      "evidence": "_cmd_set checks capacity only for new keys; existing keys can be updated at capacity. _cleanup_expired() runs before capacity check."
+    },
+    "S1": {
+      "title": "MSET atomic bulk set, returns OK <n>",
+      "verdict": "PASS",
+      "evidence": "_cmd_mset validates all pairs (key length, value size, capacity) before committing atomically; returns 'OK {len(pairs)}'."
+    },
+    "S2": {
+      "title": "MGET bulk get, NIL for missing, terminated by END",
+      "verdict": "PASS",
+      "evidence": "_cmd_mget returns value or 'NIL' per key, terminated by 'END'."
+    },
+    "S3": {
+      "title": "TTL returns remaining seconds, -1, or ERR key_not_found",
+      "verdict": "PASS",
+      "evidence": "_cmd_ttl returns remaining TTL as int, '-1' for no expiry, 'ERR key_not_found' for missing keys."
+    },
+    "S4": {
+      "title": "SETEX sets key with expiry; expired keys treated as non-existent",
+      "verdict": "PASS",
+      "evidence": "_cmd_setex stores expiry timestamp; _is_expired() used in GET, EXISTS, DEL, KEYS, COUNT to treat expired keys as non-existent."
+    },
+    "S5": {
+      "title": "APPEND appends or creates, returns OK <new_length>",
+      "verdict": "PASS",
+      "evidence": "_cmd_append appends to existing value or creates new key; returns 'OK {len(new_value)}'; enforces value size limit."
+    },
+    "Y1": {
+      "title": "RENAME renames key, returns OK or ERR key_not_found",
+      "verdict": "PASS",
+      "evidence": "_cmd_rename preserves value and expiry during rename; returns 'ERR key_not_found' if old key missing."
+    },
+    "Y2": {
+      "title": "TYPE returns STRING/INTEGER or ERR key_not_found",
+      "verdict": "PASS",
+      "evidence": "_cmd_type uses int() to distinguish INTEGER from STRING; returns 'ERR key_not_found' for missing keys."
+    },
+    "Y3": {
+      "title": "DUMP returns all key=value pairs terminated by END",
+      "verdict": "PASS",
+      "evidence": "_cmd_dump formats as '<key>=<value>' per line, terminated by 'END'; filters expired keys."
+    }
+  },
+  "notes": [
+    "Implementation uses proper two-phase atomic validation for MSET (validate-then-commit).",
+    "Expiry cleanup is lazy (on access) with explicit _cleanup_expired() before capacity checks.",
+    "Command dispatch uses .upper() for case-insensitive command matching.",
+    "MAX_KEY_LENGTH=64, MAX_VALUE_SIZE=1024, MAX_KEYS=100 as specified."
+  ]
+}

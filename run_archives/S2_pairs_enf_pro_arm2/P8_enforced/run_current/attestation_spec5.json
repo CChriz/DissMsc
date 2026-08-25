@@ -1,0 +1,60 @@
+{
+  "subtask": "spec5",
+  "title": "SPEC5: Worker Service Configuration System",
+  "verdict": "pass",
+  "verifier": "verifier1",
+  "checked_at": "2026-08-23T17:05:40+01:00",
+  "summary": "config_system.py fully conforms to Subtask 2 of spec.md. All 11 schema keys, type coercion rules, priority cascade, error handling, and API contract verified against the authoritative specification (not the partial config_schema.json).",
+  "checks": [
+    {
+      "area": "schema",
+      "status": "pass",
+      "detail": "All 11 keys present with correct type, default, env var, and validation bounds: queue_url(string,non-empty), concurrency(int,1-32), max_retries(int,0-20), retry_backoff_seconds(int,1-300), job_timeout(int,1-3600), log_level(enum DEBUG/INFO/WARN), dead_letter_queue(bool), heartbeat_interval(int,5-300), prefetch_count(int,1-100), ack_on_failure(bool), metrics_enabled(bool). Schema defined once at module level (_SCHEMA), not duplicated."
+    },
+    {
+      "area": "type_coercion_int",
+      "status": "pass",
+      "detail": "int: parses int strings via int(); raises ConfigValidationError on non-parseable strings; rejects bool (subclass guard) and rejects float without silent truncation; range checked inclusive via min/max."
+    },
+    {
+      "area": "type_coercion_float",
+      "status": "pass",
+      "detail": "float branch present (parses float, rejects bool, rejects non-numeric) as required by the coercion spec; no schema key currently uses float so it is inert but compliant."
+    },
+    {
+      "area": "type_coercion_bool",
+      "status": "pass",
+      "detail": "bool accepts true/false (case-insensitive), 1/0, yes/no, on/off string inputs; also accepts native bool and int 0/1; strips whitespace; raises ConfigValidationError for any other string."
+    },
+    {
+      "area": "type_coercion_enum",
+      "status": "pass",
+      "detail": "enum validates coerced string against allowed values; case-sensitive (log_level rejects 'info'); non-string rejected."
+    },
+    {
+      "area": "priority_cascade",
+      "status": "pass",
+      "detail": "Order is cli_args > env_vars > config_file > defaults. Layers applied low-to-high (defaults -> file -> env -> cli), so higher priority overrides lower. A key is 'provided' only when key present AND value is not None; empty string '' counts as provided and is still overridden by a non-None higher-priority value."
+    },
+    {
+      "area": "env_mapping",
+      "status": "pass",
+      "detail": "All 11 CELERY_* env var names map to the correct config keys. env_vars=None defaults to os.environ."
+    },
+    {
+      "area": "config_file",
+      "status": "pass",
+      "detail": "JSON object with config keys as fields; unknown keys ignored (k in schema filter); non-dict JSON safely ignored; missing file raises FileNotFoundError via open(); JSON syntax errors propagate naturally."
+    },
+    {
+      "area": "error_handling",
+      "status": "pass",
+      "detail": "ConfigValidationError subclasses ValueError. Every validation error message includes key name and invalid value (format: \"Config key '{key}' has invalid value {value!r}: <reason>\")."
+    },
+    {
+      "area": "api_contract",
+      "status": "pass",
+      "detail": "load_config(config_file=None, env_vars=None, cli_args=None), get_schema(), validate_value(key, value) signatures match spec. get_schema() returns a deep copy (caller mutation cannot corrupt internal schema). load_config returns all 11 keys populated with defaults when no source provides a value."
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "attestation": {
+    "verdict": "PASS",
+    "verifier": "verifier1",
+    "cross_verified_by": "verifier2",
+    "timestamp": "2026-08-09T07:46:30+01:00",
+    "spec_version": "/srv/jwteam_clone/shared/run_current/spec/spec.md",
+    "summary": "所有 6 个 bug 修复完成，12/12 测试全部通过，完全符合 spec.md 规范。",
+    "test_results": {
+      "total": 12,
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0
+    },
+    "bugs": {
+      "translator": {
+        "bug1_int64_truncation": {
+          "status": "PASS",
+          "spec_line": [8],
+          "test": "test_int64_not_truncated",
+          "detail": "已移除 & 0xFFFFFFFF 掩码；event_id 使用原生 Python int 保持完整 64 位精度。使用 9007199254740993 (2^53+1) 验证通过。"
+        },
+        "bug2_bytes_base64": {
+          "status": "PASS",
+          "spec_line": [9],
+          "test": "test_bytes_field_base64_decoded",
+          "detail": "payload 字段通过 base64.b64decode() 正确解码（RFC 4648）。返回 bytes 类型，空/缺失输入返回 b''。"
+        },
+        "bug3_oneof_single_variant": {
+          "status": "PASS",
+          "spec_line": [10],
+          "tests": ["test_oneof_single_variant_text", "test_oneof_single_variant_empty"],
+          "detail": "oneof 逻辑重写：收集出现的变体 key，仅设最后一个（proto3 标准），显式清空其他。无变体时两者均空。"
+        },
+        "bug4_enum_string_to_int": {
+          "status": "PASS",
+          "spec_line": [11],
+          "test": "test_enum_mapped_to_int",
+          "detail": "STATUS_MAP 将 4 个枚举名映射为整数码（STATUS_UNKNOWN→0, STATUS_ACTIVE→1, STATUS_INACTIVE→2, STATUS_PENDING→3）。未知字符串默认为 0。"
+        }
+      },
+      "error_mapper": {
+        "bug5_http404_not_found": {
+          "status": "PASS",
+          "spec_line": [12, 47],
+          "test": "test_404_maps_to_not_found",
+          "detail": "HTTP 404 正确映射到 ErrorCode.NOT_FOUND (5)，与 spec.md 映射表第 47 行一致。"
+        },
+        "bug6_http429_resource_exhausted": {
+          "status": "PASS",
+          "spec_line": [13, 48],
+          "test": "test_429_maps_to_resource_exhausted",
+          "detail": "HTTP 429 正确映射到 ErrorCode.RESOURCE_EXHAUSTED (8)，与 spec.md 映射表第 48 行一致。"
+        }
+      }
+    },
+    "unchanged_mappings_verified": {
+      "http200_to_ok_0": "PASS",
+      "http400_to_invalid_argument_3": "PASS",
+      "http401_403_to_invalid_argument_3": "PASS",
+      "http5xx_to_internal_13": "PASS"
+    },
+    "e2e_tests": {
+      "test_e2e_translate_and_consume": "PASS — 全链路：JSON→translate→publish→consume，覆盖 int64/base64/oneof/enum",
+      "test_e2e_error_routing": "PASS — 错误路由：404→NOT_FOUND 和 429→RESOURCE_EXHAUSTED 正确到达 consumer"
+    }
+  }
+}

@@ -1,0 +1,121 @@
+{
+  "cross3": {
+    "verdict": "pass",
+    "verifier": "verifier1",
+    "subtask": "cross3 (Protocol Bridge — JSON to Message Translation)",
+    "verified_at": "2026-08-23T16:26:00+01:00",
+    "summary": "All 7 cross3 requirements in spec/spec.md (Subtask 1) are met. The 4 translation bugs and 2 error-mapping bugs are correctly fixed in bridge/translator.py and bridge/error_mapper.py. Static review confirms test logic matches implementation and all 12 tests in tests/ are expected to pass.",
+    "requirements": [
+      {
+        "id": 1,
+        "requirement": "int64 fields must be translated as Python int (no truncation to 32-bit)",
+        "status": "pass",
+        "evidence": "bridge/translator.py `_to_int` returns arbitrary-precision Python int with no `& 0xFFFFFFFF` mask; accepts both JSON number and decimal-string forms. event_id and occurred_at both route through `_to_int`. Test test_int64_not_truncated uses 9007199254740993 (2^53+1) and asserts exact equality."
+      },
+      {
+        "id": 2,
+        "requirement": "bytes fields must be base64-decoded from JSON strings",
+        "status": "pass",
+        "evidence": "bridge/translator.py `_decode_bytes` uses `base64.b64decode(value.encode('ascii'), validate=True)` (RFC 4648 standard alphabet with padding, strict validation). payload and the binary_content oneof variant both decode to bytes. Test test_bytes_field_base64_decoded asserts isinstance bytes and exact round-trip equality."
+      },
+      {
+        "id": 3,
+        "requirement": "oneof fields must have exactly one variant set (not multiple)",
+        "status": "pass",
+        "evidence": "bridge/translator.py uses if/elif so exactly one of text_content or binary_content is set; when both keys are present text_content (declared first in schema) wins. service_b/schema.py EventMessage.validate_oneof() raises if more than one variant is truthy, and consumer.consume() calls it. Tests test_oneof_single_variant_text and test_oneof_single_variant_empty cover both cases."
+      },
+      {
+        "id": 4,
+        "requirement": "enum fields must be mapped from string names to integer values",
+        "status": "pass",
+        "evidence": "bridge/translator.py `_map_status` maps string names via STATUS_MAP (STATUS_UNKNOWN=0, STATUS_ACTIVE=1, STATUS_INACTIVE=2, STATUS_PENDING=3) to integer codes, consistent with service_b/schema.py EventStatus. Unknown names raise ValueError instead of silently defaulting to 0. Test test_enum_mapped_to_int covers all four names."
+      },
+      {
+        "id": 5,
+        "requirement": "HTTP 404 must map to NOT_FOUND error code (5)",
+        "status": "pass",
+        "evidence": "bridge/error_mapper.py maps 404 to ErrorCode.NOT_FOUND (=5 per service_b/schema.py). Test test_404_maps_to_not_found asserts this."
+      },
+      {
+        "id": 6,
+        "requirement": "HTTP 429 must map to RESOURCE_EXHAUSTED error code (8)",
+        "status": "pass",
+        "evidence": "bridge/error_mapper.py maps 429 to ErrorCode.RESOURCE_EXHAUSTED (=8 per service_b/schema.py). Test test_429_maps_to_resource_exhausted asserts this."
+      },
+      {
+        "id": 7,
+        "requirement": "All tests must pass: `pytest tests/`",
+        "status": "pass",
+        "evidence": "Static review of tests/ (test_translation.py: 5 tests, test_errors.py: 5 tests, test_e2e.py: 2 tests = 12 tests) confirms every assertion matches the implemented behavior; executor2 reported `pytest tests/` -> 12 passed, 0 failed. Note: verifier1 is under a no-execute permission boundary, so this item is confirmed by static analysis plus executor2's run report rather than an independent test execution."
+      }
+    ],
+    "additional_checks": [
+      "Error code mappings outside the 2 bugs remain per spec: 200->OK(0), 400->INVALID_ARGUMENT(3), 401/403->INVALID_ARGUMENT(3), 5xx->INTERNAL(13), default->UNKNOWN(2).",
+      "int64 string form (e.g. \"9007199254740993\") is handled correctly by `_to_int`, matching the proto3 JSON int64-as-string guidance in the spec background.",
+      "Invalid base64 input raises (validate=True) rather than being silently corrupted; unknown enum names raise ValueError rather than defaulting to 0."
+    ]
+  },
+  "test9": {
+    "verdict": "pass",
+    "verifier": "verifier2",
+    "subtask": "test9 (Mock-Based API Testing)",
+    "verified_at": "2026-08-23T16:28:30+01:00",
+    "summary": "All 8 hard requirements in spec/spec.md (Subtask 2) are met. test_service.py contains 10 mock-based test functions (>= 8 required) covering all 3 API calls with no real network I/O; service.py's send_notification now catches timeout/connection errors and returns an error dict instead of crashing. Static review confirms every assertion matches the implemented behavior; executor1 reported `python -m pytest test_service.py -v` -> 10 passed, 0 failed.",
+    "requirements": [
+      {
+        "id": 1,
+        "requirement": "Mock all 3 API calls in service.py (get_user, get_weather, send_notification)",
+        "status": "pass",
+        "evidence": "All 3 functions are exercised with patched transport: get_user (3 tests), get_weather (3 tests), send_notification (4 tests). Each test patches the module reference (service.requests.get / service.requests.post) via @patch so the real requests library is never invoked."
+      },
+      {
+        "id": 2,
+        "requirement": "Test file test_service.py using unittest.mock or pytest-mock",
+        "status": "pass",
+        "evidence": "test_service.py imports `from unittest.mock import Mock, patch` and uses standard-library @patch decorators throughout; no third-party mock dependency required."
+      },
+      {
+        "id": 3,
+        "requirement": "Mock successful responses for get_user and get_weather",
+        "status": "pass",
+        "evidence": "test_get_user_calls_correct_endpoint, test_get_user_returns_expected_shape, test_get_weather_calls_correct_endpoint and test_get_weather_returns_expected_shape all set mock_resp.json.return_value to a success payload and verify it is returned verbatim."
+      },
+      {
+        "id": 4,
+        "requirement": "Mock a network timeout for send_notification and verify graceful error dict (no crash)",
+        "status": "pass",
+        "evidence": "test_send_notification_timeout_returns_error_dict sets mock_post.side_effect = requests.exceptions.Timeout(...) and asserts service.send_notification returns {\"status\": \"error\", \"reason\": \"timeout\"} without raising."
+      },
+      {
+        "id": 5,
+        "requirement": "Each test asserts correct URL/endpoint, correct parameters, and return value shape",
+        "status": "pass",
+        "evidence": "Endpoint assertions check the exact base URL for each API (get_user includes /<user_id> in path; get_weather uses /v2/current; send_notification uses /v1/send). Parameter assertions check user_id-in-path, params={\"city\": ...}, and json={\"user_id\": ..., \"message\": ...}. Shape assertions check exact dict equality plus exact key sets for get_user/get_weather."
+      },
+      {
+        "id": 6,
+        "requirement": "Fix error handling in service.py: send_notification missing try/except for timeout errors",
+        "status": "pass",
+        "evidence": "service.py send_notification now wraps requests.post in try/except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) and returns {\"status\": \"error\", \"reason\": \"timeout\"} on those errors. get_user and get_weather are unchanged, preserving their documented behavior."
+      },
+      {
+        "id": 7,
+        "requirement": "`python -m pytest test_service.py -v` must pass with 0 failures",
+        "status": "pass",
+        "evidence": "Static review of all 10 tests confirms each assertion matches the implemented service.py behavior (URLs, params, json body, return shapes, and the timeout error path). executor1 reported `python -m pytest test_service.py -v` -> 10 passed, 0 failed. Note: verifier2 is under a no-execute permission boundary, so this item is confirmed by static analysis plus executor1's run report rather than an independent test execution."
+      },
+      {
+        "id": 8,
+        "requirement": "Minimum 8 test functions total",
+        "status": "pass",
+        "evidence": "test_service.py defines 10 top-level test_* functions: 3 get_user, 3 get_weather, 4 send_notification (10 >= 8)."
+      }
+    ],
+    "additional_checks": [
+      "No test triggers real network traffic: every requests.get/post call site under test is patched at the module-reference level (service.requests.*), and each test only exercises the function whose transport it patches.",
+      "Patching uses decorator-scoped @patch, so mocks are restored automatically after each test — no patch leakage or cross-test coupling.",
+      "get_user and get_weather retain response.raise_for_status() (HTTP error propagation unchanged), matching the spec's requirement to fix only the timeout/error handling in send_notification.",
+      "process_user_weather is an out-of-scope helper not explicitly required by the 8 hard requirements; its underlying 3 API calls are nonetheless all covered indirectly by the same patched functions."
+    ]
+  }
+}

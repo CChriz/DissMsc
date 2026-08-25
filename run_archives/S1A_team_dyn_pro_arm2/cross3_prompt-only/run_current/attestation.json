@@ -1,0 +1,86 @@
+{
+  "verdict": "PASS",
+  "verifier": "verifier1",
+  "timestamp": "2026-08-10T09:35:45+01:00",
+  "spec_version": "/srv/jwteam_clone/shared/run_current/spec/spec.md",
+  "test_suite": "pytest tests/",
+  "test_result": "12 passed, 0 failed, 0 errors",
+  "requirements": [
+    {
+      "id": "R1",
+      "description": "int64 fields must be translated as Python int without truncation to 32-bit",
+      "file": "bridge/translator.py",
+      "line": 22,
+      "implementation": "msg.event_id = int(data.get(\"event_id\", 0))",
+      "analysis": "Removed the & 0xFFFFFFFF mask. Full Python int precision preserved.",
+      "test": "tests/test_translation.py::test_int64_not_truncated",
+      "status": "PASS"
+    },
+    {
+      "id": "R2",
+      "description": "bytes fields must be base64-decoded from JSON strings",
+      "file": "bridge/translator.py",
+      "line": "28-29",
+      "implementation": "payload_str = data.get(\"payload\", \"\"); msg.payload = base64.b64decode(payload_str) if payload_str else b\"\"",
+      "analysis": "Correctly uses base64.b64decode() with empty-string guard. Returns raw bytes, not string.",
+      "test": "tests/test_translation.py::test_bytes_field_base64_decoded",
+      "status": "PASS"
+    },
+    {
+      "id": "R3",
+      "description": "oneof fields must have exactly one variant set, not multiple",
+      "file": "bridge/translator.py",
+      "line": "32-37",
+      "implementation": "if/elif chain based on input key presence (has_text / has_binary)",
+      "analysis": "Mutual exclusivity enforced via if/elif. binary_content path includes base64 decode. When neither key present, both remain falsy (defaults).",
+      "tests": [
+        "tests/test_translation.py::test_oneof_single_variant_text",
+        "tests/test_translation.py::test_oneof_single_variant_empty"
+      ],
+      "status": "PASS"
+    },
+    {
+      "id": "R4",
+      "description": "enum fields must be mapped from string names to integer values",
+      "file": "bridge/translator.py",
+      "line": 40,
+      "implementation": "msg.status = STATUS_MAP.get(data.get(\"status\", \"STATUS_UNKNOWN\"), 0)",
+      "analysis": "Correctly maps string enum names to integer codes via STATUS_MAP. Unknown strings fallback to 0 (STATUS_UNKNOWN).",
+      "test": "tests/test_translation.py::test_enum_mapped_to_int",
+      "status": "PASS"
+    },
+    {
+      "id": "R5",
+      "description": "HTTP 404 from Service A must map to NOT_FOUND error code (5)",
+      "file": "bridge/error_mapper.py",
+      "line": 18,
+      "implementation": "ErrorCode.NOT_FOUND",
+      "analysis": "Changed from ErrorCode.INVALID_ARGUMENT(3) to ErrorCode.NOT_FOUND(5). Matches proto3 semantics for resource-not-found.",
+      "test": "tests/test_errors.py::test_404_maps_to_not_found",
+      "status": "PASS"
+    },
+    {
+      "id": "R6",
+      "description": "HTTP 429 from Service A must map to RESOURCE_EXHAUSTED error code (8)",
+      "file": "bridge/error_mapper.py",
+      "line": 20,
+      "implementation": "ErrorCode.RESOURCE_EXHAUSTED",
+      "analysis": "Changed from ErrorCode.INTERNAL(13) to ErrorCode.RESOURCE_EXHAUSTED(8). Matches proto3 semantics for rate-limiting / quota exhaustion.",
+      "test": "tests/test_errors.py::test_429_maps_to_resource_exhausted",
+      "status": "PASS"
+    }
+  ],
+  "e2e_tests": [
+    {
+      "test": "tests/test_e2e.py::test_e2e_translate_and_consume",
+      "description": "Full pipeline: JSON -> translate -> consume without errors",
+      "status": "PASS"
+    },
+    {
+      "test": "tests/test_e2e.py::test_e2e_error_routing",
+      "description": "Error path: HTTP 404 and 429 must reach consumer with correct codes",
+      "status": "PASS"
+    }
+  ],
+  "summary": "All 6 spec requirements verified against implementation. All 12 tests pass (5 translation, 5 error mapping, 2 e2e). No regressions detected. Both Track A (translator.py) and Track B (error_mapper.py) fixes are correct and complete."
+}

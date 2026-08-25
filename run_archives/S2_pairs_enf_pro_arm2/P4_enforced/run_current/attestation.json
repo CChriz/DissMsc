@@ -1,0 +1,124 @@
+{
+  "lh5": {
+    "verdict": "pass",
+    "subtask": "lh5 (IoT sensor telemetry data migration: CSV -> JSONL)",
+    "checked_at": "2026-08-23T15:16:00+00:00",
+    "steps_executed_in_order": [
+      "backup",
+      "transform_format",
+      "validate_checksums",
+      "load_new_store",
+      "verify_counts",
+      "update_references"
+    ],
+    "validation_checkpoints": {
+      "after_transform_format": {
+        "status": "pass",
+        "data/transformed/ has both tables": true,
+        "transformed sensor_readings.jsonl rows": 60,
+        "expected rows": 60
+      },
+      "after_validate_checksums": {
+        "status": "pass",
+        "checksums.json has keys source and transformed": true,
+        "source entries": 2,
+        "transformed entries": 2,
+        "all entries are 64-char hex SHA-256": true
+      },
+      "after_load_new_store": {
+        "status": "pass",
+        "data/new_format/sensor_readings.jsonl exists": true,
+        "sensor_readings.jsonl rows": 60,
+        "data/new_format/devices.jsonl exists": true
+      },
+      "after_verify_counts": {
+        "status": "pass",
+        "verification_report.json exists": true,
+        "counts_match": true,
+        "source_count": 60,
+        "dest_count": 60
+      },
+      "after_update_references": {
+        "status": "pass",
+        "no orphaned device_id values": true,
+        "device_id range observed": "1..26",
+        "devices.jsonl device_id range": "1..26"
+      }
+    },
+    "rollback_triggers": {
+      "status": "pass",
+      "stops_on_step_failure_or_exception": true,
+      "rollback_executes_in_reverse_order": true,
+      "rollback_actions_defined_for_all_steps": true
+    },
+    "required_output_files": {
+      "migration_log.jsonl": "present (start/completed events per step)",
+      "migration_report.json": "present (status=success, total_steps=6)",
+      "checksums.json": "present",
+      "verification_report.json": "present",
+      "data/backup/": "present (devices.csv, sensor_readings.csv)",
+      "data/new_format/sensor_readings.jsonl": "present (60 rows)",
+      "data/new_format/devices.jsonl": "present (26 rows)"
+    },
+    "summary": "All Subtask 2 (lh5) requirements pass: 6 steps executed in strict order, every validation checkpoint satisfied, rollback logic correct, and all required output files present with correct counts (sensor_readings=60, devices=26) and no orphaned device_id references."
+  },
+  "spec6": {
+    "verdict": "pass",
+    "subtask": "spec6 (KVP key-value protocol implementation)",
+    "checked_at": "2026-08-23T16:18:00+01:00",
+    "grading_requirement": "All 12 MUST satisfied AND at least 3 of 5 SHOULD satisfied",
+    "must_requirements": {
+      "total": 12,
+      "passed": 12,
+      "checks": {
+        "M1_set_stores_value": "pass",
+        "M2_get_returns_value_or_key_not_found": "pass",
+        "M3_del_removes_key_or_key_not_found": "pass",
+        "M4_keys_lists_all_terminated_by_END": "pass",
+        "M5_count_returns_COUNT_n": "pass",
+        "M6_exists_returns_TRUE_FALSE": "pass",
+        "M7_flush_clears_all_returns_OK": "pass",
+        "M8_set_del_return_OK": "pass",
+        "M9_unknown_command_returns_ERR_unknown_command": "pass",
+        "M10_key_too_long_enforced_at_64": "pass",
+        "M11_value_too_large_enforced_at_1024": "pass",
+        "M12_store_full_enforced_at_100_except_update": "pass"
+      }
+    },
+    "should_requirements": {
+      "total": 5,
+      "passed": 5,
+      "checks": {
+        "S1_mset_atomic_returns_OK_n": "pass",
+        "S2_mget_returns_values_or_NIL_terminated_by_END": "pass",
+        "S3_ttl_returns_remaining_or_minus1_or_key_not_found": "pass",
+        "S4_setex_expiry_treated_as_non_existent": "pass",
+        "S5_append_returns_OK_new_length": "pass"
+      }
+    },
+    "may_requirements": {
+      "total": 3,
+      "passed": 3,
+      "checks": {
+        "Y1_rename_returns_OK_or_key_not_found": "pass",
+        "Y2_type_returns_STRING_or_INTEGER": "pass",
+        "Y3_dump_returns_key_eq_value_terminated_by_END": "pass"
+      }
+    },
+    "boundary_checks": {
+      "key_length_exactly_64_accepted": true,
+      "key_length_65_rejected_with_key_too_long": true,
+      "value_size_exactly_1024_accepted": true,
+      "value_size_1025_rejected_with_value_too_large": true,
+      "store_at_100_rejects_new_key_with_store_full": true,
+      "store_at_100_allows_update_of_existing_key": true,
+      "set_value_supports_spaces_via_rest_of_line": true,
+      "error_codes_match_spec_exactly": true,
+      "list_responses_terminated_by_END_marker": true
+    },
+    "tests": {
+      "tests_test_protocol_py": "15 passed (0 failed) as reported by executor3; static analysis confirms each assertion is satisfied by the implementation"
+    },
+    "summary": "All 12 MUST requirements pass, all 5 SHOULD requirements pass (>=3 required), and all 3 MAY requirements pass (bonus). KVStore implements every command from protocol_spec.txt with correct limits (key<=64, value<=1024, keys<=100), exact error codes (ERR key_not_found / key_too_long / value_too_large / store_full / unknown_command), list responses terminated by END, SET/SETEX/APPEND values supporting embedded spaces, atomic MSET, and lazy expiry cleanup for SETEX/TTL. Boundary conditions at 64/1024/100 verified as correct. Existing test suite test_protocol.py passes 15/15."
+  }
+}

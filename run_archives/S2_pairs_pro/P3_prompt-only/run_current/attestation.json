@@ -1,0 +1,90 @@
+{
+  "p5": {
+    "verifier": "verifier1",
+    "task": "p5-verify",
+    "subtask": "p5 审计日志合规",
+    "timestamp": "2026-08-08T03:40:50Z",
+    "verdict": "PASS",
+    "summary": "All requirements from corpus/audit_policy.txt and spec.md are fully satisfied.",
+    "checks": {
+      "audit_py": {
+        "log_event": {
+          "status": "PASS",
+          "details": "Implements log_event(event_type, **fields)->dict. Adds universal fields (event_type, log_id UUID4), appends caller-supplied fields, computes HMAC-SHA256 signature, appends to _AUDIT_LOG, returns entry. Raises ValueError for unknown event types."
+        },
+        "get_log": {
+          "status": "PASS",
+          "details": "Returns list(_AUDIT_LOG), a copy of all stored entries."
+        },
+        "verify_log": {
+          "status": "PASS",
+          "details": "Returns indices of entries failing HMAC-SHA256 verification. Uses hmac.compare_digest() for timing-safe comparison. Handles missing signature field."
+        },
+        "event_types": {
+          "status": "PASS",
+          "details": "All 5 required event types supported: config_changed, user_login, report_accessed, data_exported, payment_initiated."
+        },
+        "fields": {
+          "status": "PASS",
+          "details": "Universal fields (event_type, log_id) always present. Event-type-specific fields passed through from caller."
+        },
+        "tamper_detection": {
+          "status": "PASS",
+          "details": "HMAC-SHA256 hex digest of canonical JSON (sort_keys=True, excludes 'signature' field). Key from env AUDIT_HMAC_KEY (default 'default-key')."
+        }
+      },
+      "app_py": {
+        "status": "PASS",
+        "details": "All 5 POST endpoints call audit.log_event() with correct event_type and request body fields. GET /audit-log returns audit.get_log(). GET /verify-log returns audit.verify_log() result. Route signatures unchanged."
+      },
+      "tests": {
+        "status": "PASS",
+        "details": "20 tests in tests/test_audit.py covering all event types, required fields, signature generation/verification, tamper detection, get_log, and edge cases. All passing per executor1 report."
+      }
+    },
+    "failures": []
+  },
+  "test9": {
+    "verifier": "verifier2",
+    "task": "test9-verify",
+    "subtask": "test9 Mock API 测试",
+    "timestamp": "2026-08-08T03:41:00Z",
+    "verdict": "PASS",
+    "summary": "All 8 hard requirements from spec.md Subtask 2 (test9) are fully satisfied. pytest: 9 passed, 0 failures.",
+    "checks": {
+      "req1_mock_all_3_apis": {
+        "status": "PASS",
+        "details": "get_user, get_weather, send_notification all mocked via unittest.mock.patch. All three API interactions covered across 9 tests."
+      },
+      "req2_test_file_and_library": {
+        "status": "PASS",
+        "details": "File is test_service.py. Uses from unittest import mock (line 15)."
+      },
+      "req3_success_response_mocking": {
+        "status": "PASS",
+        "details": "test_get_user_success mocks 200 with {id, name, email}. test_get_weather_success mocks 200 with {city, temp, condition}."
+      },
+      "req4_timeout_error_simulation": {
+        "status": "PASS",
+        "details": "test_send_notification_timeout raises Timeout, verifies error dict returned. test_send_notification_connection_error additionally covers ConnectionError. No crash in either case."
+      },
+      "req5_assertions_url_params_shape": {
+        "status": "PASS",
+        "details": "Every test asserts on correct URL/endpoint, correct parameters (params/json/timeout), and return value shape. Integration tests verify full combined dict structure."
+      },
+      "req6_fix_error_handling": {
+        "status": "PASS",
+        "details": "service.py send_notification() wraps requests.post() in try/except catching (Timeout, ConnectionError), returns {\"status\":\"error\",\"reason\":\"timeout\"}."
+      },
+      "req7_pytest_all_pass": {
+        "status": "PASS",
+        "details": "python -m pytest test_service.py -v: 9 collected, 9 passed, 0 failures in 0.08s."
+      },
+      "req8_min_8_test_functions": {
+        "status": "PASS",
+        "details": "9 test functions total (>=8 required): get_user_success, get_weather_success, send_notification_success, send_notification_timeout, send_notification_connection_error, get_user_http_error, get_weather_http_error, process_user_weather_success, process_user_weather_notification_timeout."
+      }
+    },
+    "failures": []
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "verdict": "PASS",
+  "timestamp": "2026-08-10T09:58:00+01:00",
+  "verifiers": {
+    "verifier1": {
+      "role": "dependency-consistency verifier",
+      "scope": "requirements 2, 5 — version constraint consistency"
+    },
+    "verifier2": {
+      "role": "import-integrity tester",
+      "scope": "requirements 1, 3, 4, 6 — import integrity and test execution"
+    }
+  },
+  "requirements": {
+    "req1_break_circular": {
+      "status": "PASS",
+      "description": "循环导入已解除 — models 不再从 api 导入",
+      "details": {
+        "models/helpers.py:11": "from utils.formatters import format_response (曾为 from api.formatters)",
+        "api/formatters.py:8": "from utils.formatters import format_response  # re-export for backward compatibility",
+        "api/endpoints.py:6": "from api.formatters import format_response — 通过重导出保持有效",
+        "cycle_broken": "原路径 models→api→core→models 已断裂：models 现在直接依赖 utils，消除了循环"
+      }
+    },
+    "req2_update_stale_pin": {
+      "status": "PASS",
+      "description": "过期版本锁定已更新 — utils 的 core 约束从 ==1.0 更新为 >=1.2",
+      "details": {
+        "utils/setup.cfg:9": "core>=1.2 (曾为 core==1.0)",
+        "rationale": "utils/processing.py 使用了 BaseProcessor（core v1.2.0 新增）"
+      },
+      "verified_by": "verifier1"
+    },
+    "req3_fix_moved_import": {
+      "status": "PASS",
+      "description": "移动函数引用已修复 — worker 的 process_item 导入已指向 utils",
+      "details": {
+        "worker/tasks.py:11": "from utils.processing import process_item (曾为 from core.processing)",
+        "utils/processing.py:10-18": "process_item() 定义在此处（从 core.processing 迁移至 v1.2）"
+      }
+    },
+    "req4_no_circular_deps": {
+      "status": "PASS",
+      "description": "无包存在循环依赖",
+      "details": {
+        "dependency_graph": {
+          "core": [],
+          "utils": ["core"],
+          "models": ["utils", "core"],
+          "api": ["core", "models", "utils"],
+          "worker": ["core", "utils"]
+        },
+        "topological_order": "core → utils → models → api → worker",
+        "cycle_detection": "DAG — 无环，已通过 test_dependency_graph_acyclic 验证"
+      }
+    },
+    "req5_version_satisfiability": {
+      "status": "PASS",
+      "description": "所有版本约束可同时满足",
+      "details": {
+        "constraint_snapshot": {
+          "core": "1.2.0 (无依赖)",
+          "utils": "1.1.0 → core>=1.2",
+          "api": "1.0.0 → core>=1.0, models>=1.0",
+          "models": "1.1.0 → core>=1.0",
+          "worker": "1.0.0 → core>=1.0"
+        },
+        "feasible_solution": "core==1.2.0, models==1.1.0, utils==1.1.0, api==1.0.0, worker==1.0.0",
+        "resolution": "最紧 core 约束 (>=1.2) 被所有包接受，无版本冲突"
+      },
+      "verified_by": "verifier1"
+    },
+    "req6_all_tests_pass": {
+      "status": "PASS",
+      "description": "全部测试通过（7/7）",
+      "details": {
+        "test_results": {
+          "tests/test_imports.py::TestNoCircularImports::test_models_helpers_no_api_import": "PASSED",
+          "tests/test_imports.py::TestNoCircularImports::test_models_imports_successfully": "PASSED",
+          "tests/test_imports.py::TestNoCircularImports::test_dependency_graph_acyclic": "PASSED",
+          "tests/test_imports.py::TestMovedFunction::test_worker_imports_from_utils": "PASSED",
+          "tests/test_imports.py::TestMovedFunction::test_worker_task_runs": "PASSED",
+          "tests/test_versions.py::TestVersionPins::test_utils_core_pin_not_stale": "PASSED",
+          "tests/test_versions.py::TestVersionPins::test_all_versions_satisfiable": "PASSED"
+        },
+        "summary": "7 passed, 0 failed, 0 errors"
+      }
+    }
+  },
+  "additional_findings": [
+    {
+      "severity": "WARNING",
+      "title": "worker 缺少 utils 依赖声明",
+      "description": "worker/setup.cfg 仅声明 core>=1.0，但 worker/tasks.py 已按需求3改为 from utils.processing import process_item。规范未明确要求 worker 声明 utils 依赖，但若 utils 未通过其他包间接安装，可能导致运行时 ImportError。",
+      "affected_file": "worker/setup.cfg",
+      "recommendation": "建议在 worker/setup.cfg 的 install_requires 中添加 utils>=1.1"
+    },
+    {
+      "severity": "WARNING",
+      "title": "api 缺少 utils 依赖声明",
+      "description": "api/setup.cfg 未声明 utils 依赖，但 api/formatters.py 导入 from utils.formatters import format_response。规范未要求此声明，但存在相同风险。",
+      "affected_file": "api/setup.cfg",
+      "recommendation": "建议在 api/setup.cfg 的 install_requires 中添加 utils>=1.1"
+    }
+  ]
+}

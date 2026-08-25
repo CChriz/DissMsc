@@ -1,0 +1,55 @@
+{
+  "verifier": "verifier1",
+  "timestamp": "2026-08-08T21:04:10+01:00",
+  "overall_verdict": "PASS",
+  "requirements": [
+    {
+      "id": 1,
+      "description": "int64 fields must be translated as Python int (no truncation to 32-bit)",
+      "status": "PASS",
+      "detail": "msg.event_id = int(data.get('event_id', 0)) 和 msg.occurred_at = int(data.get('occurred_at', 0)) — 无 & 0xFFFFFFFF 位掩码，使用 Python 原生 int（任意精度）。测试 test_int64_not_truncated 通过。"
+    },
+    {
+      "id": 2,
+      "description": "bytes fields must be base64-decoded from JSON strings",
+      "status": "PASS",
+      "detail": "msg.payload = base64.b64decode(payload_raw) 和 oneof 分支中 msg.binary_content = base64.b64decode(binary_val) — 均正确将 base64 字符串解码为原始 bytes。测试 test_bytes_field_base64_decoded 通过。"
+    },
+    {
+      "id": 3,
+      "description": "oneof fields must have exactly one variant set (not multiple)",
+      "status": "PASS",
+      "detail": "if/elif 逻辑：text_val 存在时设置 text_content，binary_val 作为 fallback，两者均空则都不设置。每条消息仅设置其中一个变体。测试 test_oneof_single_variant_text 和 test_oneof_single_variant_empty 通过。"
+    },
+    {
+      "id": 4,
+      "description": "enum fields must be mapped from string names to integer values",
+      "status": "PASS",
+      "detail": "msg.status = STATUS_MAP.get(status_str, 0) — 将字符串键（STATUS_UNKNOWN/ACTIVE/INACTIVE/PENDING）映射为与 EventStatus IntEnum 一致的整数值。测试 test_enum_mapped_to_int 通过。"
+    },
+    {
+      "id": 5,
+      "description": "HTTP 404 from Service A must map to NOT_FOUND error code (5) for Service B",
+      "status": "PASS",
+      "detail": "status_code == 404 → ErrorCode.NOT_FOUND（整数值 5）。已从 INVALID_ARGUMENT(3) 修正为 NOT_FOUND(5)。测试 test_404_maps_to_not_found 通过。"
+    },
+    {
+      "id": 6,
+      "description": "HTTP 429 from Service A must map to RESOURCE_EXHAUSTED error code (8) for Service B",
+      "status": "PASS",
+      "detail": "status_code == 429 → ErrorCode.RESOURCE_EXHAUSTED（整数值 8）。已从 INTERNAL(13) 修正为 RESOURCE_EXHAUSTED(8)。测试 test_429_maps_to_resource_exhausted 通过。"
+    },
+    {
+      "id": 7,
+      "description": "All tests must pass: pytest tests/",
+      "status": "PASS",
+      "detail": "12/12 测试全部通过：test_e2e_translate_and_consume, test_e2e_error_routing, test_200_maps_to_ok, test_400_maps_to_invalid_argument, test_404_maps_to_not_found, test_429_maps_to_resource_exhausted, test_500_maps_to_internal, test_int64_not_truncated, test_bytes_field_base64_decoded, test_oneof_single_variant_text, test_oneof_single_variant_empty, test_enum_mapped_to_int。"
+    }
+  ],
+  "test_summary": {
+    "total": 12,
+    "passed": 12,
+    "failed": 0,
+    "skipped": 0
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "verdict": "pass",
+  "subtask": "ir2",
+  "question": "What is the internal codename of Project Kestrel?",
+  "answer": "TERRA-3",
+  "evidence": [
+    {"doc": "doc_A.txt", "lines": [2, 2]},
+    {"doc": "doc_B.txt", "lines": [2, 2]}
+  ],
+  "checks": [
+    {"id": "R1", "requirement": "answer.json contains answer + evidence array with doc/lines objects", "status": "pass"},
+    {"id": "R2", "requirement": "exactly two evidence items from two different documents", "status": "pass", "detail": "doc_A.txt and doc_B.txt"},
+    {"id": "R3", "requirement": "evidence line ranges contain the answer string verbatim", "status": "pass", "detail": "doc_A.txt line 2 contains 'TERRA-3'; doc_B.txt line 2 contains 'TERRA-3'"},
+    {"id": "R4", "requirement": "doc_trap.txt not used as evidence", "status": "pass", "detail": "only doc_A.txt and doc_B.txt cited; trap document TERRA-13 correctly excluded"},
+    {"id": "R5", "requirement": "answer cross-verified against two independent corpus sources", "status": "pass", "detail": "doc_A: 'internal designation TERRA-3'; doc_B: 'internal codename: TERRA-3'"}
+  ],
+  "test9": {
+    "subtask": "test9 (Mock-Based API Testing)",
+    "verdict": "pass",
+    "test_function_count": 11,
+    "requirements": {
+      "req1_mock_all_3_api_calls": {
+        "status": "pass",
+        "note": "get_user, get_weather, send_notification are all mocked via patch('service.requests.get') and patch('service.requests.post'); no real network calls."
+      },
+      "req2_unittest_mock": {
+        "status": "pass",
+        "note": "test_service.py uses unittest.mock (Mock, patch)."
+      },
+      "req3_mock_success_responses": {
+        "status": "pass",
+        "note": "Successful responses are mocked for get_user and get_weather via _mock_response()."
+      },
+      "req4_timeout_error_simulation": {
+        "status": "pass",
+        "note": "send_notification timeout is simulated with side_effect=requests.exceptions.Timeout and verified to return {'status': 'error', 'reason': 'timeout'} without crashing; ConnectionError also covered."
+      },
+      "req5_assertions": {
+        "status": "pass",
+        "note": "URL/endpoint, parameters, and return-value shape are asserted across all 3 APIs (get_user, get_weather, send_notification)."
+      },
+      "req6_fix_error_handling": {
+        "status": "pass",
+        "note": "service.py send_notification now has try/except catching requests.exceptions.Timeout and requests.exceptions.ConnectionError."
+      },
+      "req7_pytest_zero_failures": {
+        "status": "pass",
+        "note": "Static review confirms all 11 tests are logically valid (correct patches, deterministic mocks, meaningful assertions); executor3 reports 'python -m pytest test_service.py -v' -> 11 passed, 0 failed."
+      },
+      "req8_min_8_test_functions": {
+        "status": "pass",
+        "note": "11 test functions total (>= 8)."
+      }
+    },
+    "summary": "All 8 hard requirements of Subtask 1 (test9) are satisfied. verdict=pass."
+  }
+}

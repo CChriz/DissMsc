@@ -1,0 +1,64 @@
+{
+  "verdict": "PASS",
+  "timestamp": "2026-08-09T19:08:30+01:00",
+  "updated_timestamp": "2026-08-09T19:10:30+01:00",
+  "revision": "v1.1 — S5 APPEND 修复后重新验证",
+  "verifier": "verifier1",
+  "implementation": "/srv/jwteam_clone/shared/run_current/workspace/protocol.py",
+  "specification": "/srv/jwteam_clone/shared/run_current/spec/v_spec.md",
+  "test_file": "/srv/jwteam_clone/shared/run_current/workspace/tests/test_protocol.py",
+  "pass_criteria": {
+    "must_minimum": "12/12 (100%)",
+    "should_minimum": "4/5 (80%)",
+    "tests_minimum": "15/15 (100%)"
+  },
+  "score": {
+    "must_weight": 0.6,
+    "should_weight": 0.3,
+    "may_weight": 0.1,
+    "must_passed": 12,
+    "must_total": 12,
+    "should_passed": 4,
+    "should_total": 5,
+    "may_passed": 0,
+    "may_total": 3,
+    "computed_score": 0.84,
+    "formula": "(12/12 * 0.6) + (4/5 * 0.3) + (0/3 * 0.1) = 0.6 + 0.24 + 0.0 = 0.84"
+  },
+  "tests": {
+    "total": 15,
+    "passed": 15,
+    "failed": 0,
+    "result": "ALL PASSED"
+  },
+  "must_requirements": [
+    {"id": "M1", "description": "SET <key> <value> — 存储值，支持含空格 value", "status": "PASS", "code_ref": "_handle_set L70-88", "notes": "value 通过 ' '.join(args[1:]) 正确拼接多词值"},
+    {"id": "M2", "description": "GET <key> — 返回值或 ERR key_not_found", "status": "PASS", "code_ref": "_handle_get L90-98", "notes": "含过期清理 _is_expired(key)"},
+    {"id": "M3", "description": "DEL <key> — 删除 key，不存在返回 ERR key_not_found", "status": "PASS", "code_ref": "_handle_del L100-109", "notes": "同时清理 _expiry"},
+    {"id": "M4", "description": "KEYS — 列出所有 key，每行一个，END 终止", "status": "PASS", "code_ref": "_handle_keys L111-117", "notes": "含 _cleanup_expired() 批量清理"},
+    {"id": "M5", "description": "COUNT — 返回 COUNT <n>", "status": "PASS", "code_ref": "_handle_count L119-122", "notes": "含过期清理后计数"},
+    {"id": "M6", "description": "EXISTS <key> — 返回 TRUE/FALSE", "status": "PASS", "code_ref": "_handle_exists L124-130", "notes": ""},
+    {"id": "M7", "description": "FLUSH — 清空所有 key，返回 OK", "status": "PASS", "code_ref": "_handle_flush L132-136", "notes": "清空 _data 和 _expiry"},
+    {"id": "M8", "description": "SET/DEL 成功返回 OK", "status": "PASS", "code_ref": "SET L88, DEL L109", "notes": ""},
+    {"id": "M9", "description": "未知命令返回 ERR unknown_command", "status": "PASS", "code_ref": "dispatch L65-66, L37-38", "notes": "空命令同样返回 ERR unknown_command"},
+    {"id": "M10", "description": "key 超 64 字符 → ERR key_too_long", "status": "PASS", "code_ref": "_handle_set L78-79", "notes": "使用 > MAX_KEY_LENGTH (64)"},
+    {"id": "M11", "description": "value 超 1024 字符 → ERR value_too_large", "status": "PASS", "code_ref": "_handle_set L81-82", "notes": "使用 > MAX_VALUE_SIZE (1024)"},
+    {"id": "M12", "description": "达 100 key 上限新 key 拒绝，已有 key 允许更新", "status": "PASS", "code_ref": "_handle_set L84-85", "notes": "len(_data) >= MAX_KEYS and key not in _data"}
+  ],
+  "should_requirements": [
+    {"id": "S1", "description": "MSET <k1> <v1> ... — 原子批量设置，返回 OK <n>", "status": "PASS", "code_ref": "_handle_mset L160-193", "notes": "预校验所有对后原子写入；值仅单 token（协议格式固有限制）"},
+    {"id": "S2", "description": "MGET <k1> <k2> ... — 批量获取，缺失返回 NIL，END 终止", "status": "PASS", "code_ref": "_handle_mget L195-202", "notes": ""},
+    {"id": "S3", "description": "TTL <key> — 返回剩余秒数 / -1 / ERR key_not_found", "status": "PASS", "code_ref": "_handle_ttl L204-215", "notes": ""},
+    {"id": "S4", "description": "SETEX <key> <seconds> <value> — 设置带过期时间的 key", "status": "FAIL", "code_ref": "N/A", "notes": "未实现 — execute() 中无 SETEX 分支，落入 ERR unknown_command"},
+    {"id": "S5", "description": "APPEND <key> <value> — 追加值，返回 OK <new_length>", "status": "PASS", "code_ref": "_handle_append L2-27", "notes": "已修复：① 不存在 key 时创建新 key（含 key_too_long/value_too_large/store_full 校验）；② 正确返回 OK <new_length>"}
+  ],
+  "may_requirements": [
+    {"id": "Y1", "description": "RENAME <old_key> <new_key> — 重命名 key", "status": "NOT_IMPLEMENTED", "code_ref": "N/A", "notes": "加分项，未实现"},
+    {"id": "Y2", "description": "TYPE <key> — 返回值类型", "status": "NOT_IMPLEMENTED", "code_ref": "N/A", "notes": "加分项，未实现"},
+    {"id": "Y3", "description": "DUMP — 导出所有 key-value 对", "status": "NOT_IMPLEMENTED", "code_ref": "N/A", "notes": "加分项，未实现"}
+  ],
+  "risk_notes": [
+    "S4 SETEX 未实现 — 唯一缺失的 SHOULD 需求",
+    "无关键阻塞问题，达标条件满足"
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "messages": [
+    {
+      "order": 0,
+      "from": "cpool1",
+      "to": "executor2",
+      "broadcast": false,
+      "recipients": [
+        "executor2"
+      ],
+      "delivered": true,
+      "from_turn": 1,
+      "send_seq": 3111,
+      "send_ts": 1787496341.285498,
+      "content": "【p5 审计日志合规 — 实现计划（planner1 → executor2）】\n\n请在工作区 /srv/jwteam_clone/shared/run_current/workspace 内完成 FinanceApp 的 HMAC-SHA256 审计日志实现，使其通过 tests/test_audit.py 全部用例。开始前请务必先读取以下 4 个文件，以它们为准核对细节：workspace/corpus/audit_policy.txt、workspace/audit.py 的 docstring、workspace/app.py 的 TODO、workspace/tests/test_audit.py。\n\n════════════════════════════════════\n一、目标与验收标准\n════════════════════════════════════\n1. 在 audit.py 实现并导出 log_event / get_log / verify_log 三个函数。\n2. 防篡改采用 HMAC-SHA256；对条目计算\"规范 JSON\"（字段按字母序排序，且排除 signature 字段本身）的摘要。\n3. 密钥取环境变量 AUDIT_HMAC_KEY，未设置时默认 \"default-key\"。\n4. 支持五种事件类型；非法 event_type 抛 ValueError。\n5. 将 audit.log_event() 集成到 app.py 的 5 个端点，不修改路由签名与返回结构。\n\n════════════════════════════════════\n二、audit.py 实现设计\n════════════════════════════════════\n顶部导入：hashlib、hmac、json、os、uuid。\n\n1) 常量与共享状态\n- _AUDIT_LOG 已存在，保持 in-memory list，勿改为持久化。\n- VALID_EVENT_TYPES = {\"config_changed\", \"user_login\", \"report_accessed\", \"data_exported\", \"payment_initiated\"}\n\n2) 内部 helper（务必让 log_event 与 verify_log 复用同一套算法，保证一致）\n- _hmac_key() -> bytes：os.environ.get(\"AUDIT_HMAC_KEY\", \"default-key\").encode(\"utf-8\")\n- _canonical_payload(entry: dict) -> bytes：payload = {k:v for k,v in entry.items() if k != \"signature\"}，然后 json.dumps(payload, sort_keys=True, separators=(\",\", \":\")).encode(\"utf-8\")\n  ※ sort_keys=True 保证字母序；排除 signature；建议紧凑 separators。\n- _compute_signature(entry: dict) -> str：hmac.new(_hmac_key(), _canonical_payload(entry), hashlib.sha256).hexdigest()\n\n3) log_event(event_type: str, **fields) -> dict\n- 若 event_type 不在 VALID_EVENT_TYPES，立即 raise ValueError。\n- entry = dict(fields)\n- entry[\"event_type\"] = event_type\n- entry[\"log_id\"] = str(uuid.uuid4())   # 字符串\n- entry[\"signature\"] = _compute_signature(entry)\n- _AUDIT_LOG.append(entry)\n- return entry（返回含 signature 的完整条目）\n\n4) get_log() -> list[dict]\n- 直接 return _AUDIT_LOG（in-memory 全量返回）。\n\n5) verify_log(entries: list[dict]) -> list[int]\n- 遍历 enumerate(entries)：\n  - 若 \"signature\" 不在 entry → 记该下标为失败。\n  - 否则 expected = _compute_signature(entry)；provided = entry[\"signature\"]；\n  - 用 hmac.compare_digest(str(provided), expected) 防时序比较，不一致则记下标。\n- 返回失败下标列表（0-based），全部有效返回 []。\n\n════════════════════════════════════\n三、五种事件类型字段表（= 通用字段 ∪ 专属字段）\n════════════════════════════════════\n通用字段由 log_event 生成：event_type、log_id、signature；其余由调用方（app.py）传入。\n\n- config_changed: user_id, timestamp, config_key, old_value, new_value, user_agent\n- user_login: user_id, timestamp, ip_address, success, correlation_id\n- report_accessed: user_id, timestamp, report_id, report_type, request_id\n- data_exported: user_id, timestamp, export_format, record_count, destination, user_agent\n- payment_initiated: user_id, timestamp, amount, currency, recipient_account, session_id\n\n════════════════════════════════════\n四、app.py 集成要点\n════════════════════════════════════\n1. 在 app.py 顶部确保已 import audit（按现有代码风格，如 `import audit` 或 `from audit import log_event`）。\n2. 定位 5 个端点函数，在每个端点的正常业务路径内（return 之前）调用一次 audit.log_event(event_type, ...)，传入对应事件的专属字段 + user_id + timestamp。\n   - 字段值优先取自端点内已有的请求/业务变量（如 request 上下文、路径参数、请求体、返回值来源等）。\n   - timestamp 若端点已有现成时间值则复用；否则用标准 UTC 时间（如 datetime.now(timezone.utc).isoformat() 或按 audit_policy.txt / app.py 现有约定）。请先读 audit_policy.txt 和 test_audit.py 确认断言格式。\n3. 严格不改路由装饰器签名、函数参数、返回结构；仅在函数体内部追加一行 log_event 调用。\n4. log_event 调用失败不应影响业务（可选：用 try/except 包裹并吞掉异常，避免审计日志报错导致端点 500；但若测试期望异常冒泡则不要吞，请以 test_audit.py 为准）。\n\n端点 → 事件类型映射：\n- config_changed 端点 → log_event(\"config_changed\", ...)\n- user_login 端点 → log_event(\"user_login\", ...)\n- report_accessed 端点 → log_event(\"report_accessed\", ...)\n- data_exported 端点 → log_event(\"data_exported\", ...)\n- payment_initiated 端点 → log_event(\"payment_initiated\", ...)\n\n════════════════════════════════════\n五、关键陷阱与自检核对清单\n════════════════════════════════════\n□ log_id 用 uuid.uuid4() 转字符串，每次唯一。\n□ event_type 非法抛 ValueError（五种之外的字符串）。\n□ signature 计算排除 signature 字段本身（否则会递归/污染）。\n□ canonical JSON 字段按字母序（sort_keys=True）。\n□ log_event 返回完整条目（含 event_type/log_id/signature/所有传入字段）。\n□ verify_log 与 log_event 共用同一 _compute_signature，签名一致。\n□ verify_log 对缺失 signature 的条目判失败。\n□ get_log 返回 in-memory 列表，不做持久化。\n□ app.py 5 个端点全部集成，无遗漏、无重复调用。\n□ 未改路由签名/返回结构。\n□ 密钥：AUDIT_HMAC_KEY 未设置时默认 \"default-key\"。\n□ 用 hmac.compare_digest 比较签名（防时序攻击，属于加分项）。\n\n════════════════════════════════════\n六、参考实现骨架（audit.py 核心）\n════════════════════════════════════\nimport hashlib, hmac, json, os, uuid\n\n_AUDIT_LOG = []  # 已存在，勿改持久化\n\nVALID_EVENT_TYPES = {\n    \"config_changed\", \"user_login\", \"report_accessed\",\n    \"data_exported\", \"payment_initiated\",\n}\n\ndef _hmac_key():\n    return os.environ.get(\"AUDIT_HMAC_KEY\", \"default-key\").encode(\"utf-8\")\n\ndef _canonical_payload(entry):\n    payload = {k: v for k, v in entry.items() if k != \"signature\"}\n    return json.dumps(payload, sort_keys=True, separators=(\",\", \":\")).encode(\"utf-8\")\n\ndef _compute_signature(entry):\n    return hmac.new(_hmac_key(), _canonical_payload(entry), hashlib.sha256).hexdigest()\n\ndef log_event(event_type, **fields):\n    if event_type not in VALID_EVENT_TYPES:\n        raise ValueError(f\"Unknown event_type: {event_type}\")\n    entry = dict(fields)\n    entry[\"event_type\"] = event_type\n    entry[\"log_id\"] = str(uuid.uuid4())\n    entry[\"signature\"] = _compute_signature(entry)\n    _AUDIT_LOG.append(entry)\n    return entry\n\ndef get_log():\n    return _AUDIT_LOG\n\ndef verify_log(entries):\n    failed = []\n    for idx, entry in enumerate(entries):\n        if \"signature\" not in entry:\n            failed.append(idx)\n            continue\n        expected = _compute_signature(entry)\n        if not hmac.compare_digest(str(entry[\"signature\"]), expected):\n            failed.append(idx)\n    return failed\n\n※ 注意：若 test_audit.py 对 signature 的具体字符串有精确断言，务必按其 canonical JSON 格式（是否紧凑 separators、是否 ensure_ascii 等）对齐；否则只需保证 log_event 与 verify_log 内部一致即可。\n\n完成后请运行 pytest tests/test_audit.py 确认 0 失败，然后 send_message 通知 verifier1 验收。",
+      "content_len": 5832
+    },
+    {
+      "order": 1,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 3,
+      "send_seq": 4605,
+      "send_ts": 1787496353.631457,
+      "content": "【TEST9 实现计划 — 请 executor1 直接执行】\n\n## 0. 开工前先读源码（关键，勿跳过）\n先用 read_file 读取 /srv/jwteam_clone/shared/run_current/workspace/service.py，确认并记录以下事实，后续测试必须以真实代码为准，不要凭空假设：\n1. 用的 HTTP 客户端库是 requests 还是 urllib，具体调用形式（requests.get/post？还是 Session 实例方法？）。\n2. get_user(user_id)、get_weather(city)、send_notification(user_id, message) 三个函数的真实签名、URL/endpoint 构造方式、参数如何传递（query params / path / body），以及成功时各自的返回结构（字段名）。\n3. send_notification 中哪一行是发起网络调用、当前缺少 try/except 的位置。\n\n## 1. 修复 service.py 的 send_notification 错误处理（硬性要求 6）\n目标：网络超时/连接失败时优雅降级，返回 error dict，绝不抛出异常崩溃。\n- 把网络调用包裹进 try/except。\n- 捕获顺序：先捕获具体的 requests.exceptions.Timeout（其子类 ConnectTimeout/ReadTimeout 一并覆盖），再捕获 requests.exceptions.RequestException 作为其他网络错误兜底。若用的是 urllib，则对应捕获 urllib.error.URLError / socket.timeout。\n- 严禁裸 except Exception（会掩盖 bug）。\n- 失败时返回统一形状的 error dict，建议：{\"status\": \"error\", \"error\": \"timeout\"}（error 值可填具体异常类型名）；成功路径保持原返回结构完全不变。\n- 只改 send_notification 内部错误处理，不改三个函数的公开签名。\n\n## 2. 编写 test_service.py（硬性要求 2/3/4/8）\n用 unittest.mock（推荐 @patch 或 with patch 装饰/上下文）隔离全部网络调用，禁止任何真实网络请求。建议补足到 ≥8 个测试函数：\n\n1) test_get_user_success —— mock 成功响应，断言返回值为 dict 且字段与 service.py 真实结构一致（shape 断言）。\n2) test_get_user_calls_correct_url_and_params —— 断言调用 URL 含 user_id、参数传递正确。\n3) test_get_weather_success —— mock 成功响应，断言返回 dict 结构正确。\n4) test_get_weather_calls_correct_url_and_params —— 断言 URL/城市参数正确。\n5) test_send_notification_success —— mock 成功，断言返回状态、URL 与参数正确。\n6) test_send_notification_timeout_returns_error_dict —— mock 抛 Timeout，断言返回 error dict（status=error），且不抛异常（用 pytest.raises 断言\"不抛\"即可省略，正常结束即通过）。\n7) test_send_notification_connection_error —— mock 抛 ConnectionError，断言优雅返回 error dict。\n8) test_send_notification_other_request_exception —— mock 抛其他 RequestException，断言兜底返回 error dict。\n\n（如需更多用例，可为 get_user/get_weather 增加返回 shape 边界或缺失字段用例，凑足 ≥8。）\n\nMock 要点：\n- 成功：resp = Mock(); resp.json.return_value = {...真实字段...}; resp.status_code = 200; patch('requests.get', return_value=resp)（或对应真实调用点）。\n- 超时：patch(..., side_effect=requests.exceptions.Timeout('boom'))。\n- 调用断言：mock_get.assert_called_once()，再用 mock_get.call_args 检查 URL 与参数；requests.get(url, params=...) 时 params 在 call_args.kwargs['params']，path 变量在 call_args.args[0] 或 kwargs['url']。\n\n## 3. 每个测试必须覆盖三要素（硬性要求 5）\n- 正确 URL/endpoint 被调用；\n- 正确参数被传递；\n- 返回值 shape 与预期一致。\n\n## 4. 验收核对项（完成后逐条自查）\n- [ ] service.py 的 send_notification 已加 try/except，超时/网络错误返回 error dict，不崩溃。\n- [ ] get_user/get_weather/send_notification 三个函数公开签名未变。\n- [ ] test_service.py 位于 /srv/jwteam_clone/shared/run_current/workspace/ 下，测试函数 ≥8 个。\n- [ ] 所有网络调用均被 mock，无真实请求。\n- [ ] 每个测试含 URL、参数、返回 shape 断言。\n- [ ] python -m pytest test_service.py -v 运行 0 失败。\n- [ ] 完成后 send_message 通知 verifier2。\n\n原则提醒：不要假设未文档化的行为；URL/参数/返回结构一律以 service.py 真实代码为准；成功与失败两种模式都要有断言。",
+      "content_len": 2728
+    },
+    {
+      "order": 2,
+      "from": "cpool1",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 3,
+      "send_seq": 3413,
+      "send_ts": 1787496356.022746,
+      "content": "已完成 plan_p5（p5 审计日志合规实现计划）制定，并已将完整计划通过私信交付给 executor2。计划涵盖：audit.py 的 log_event/get_log/verify_log 三个函数设计、HMAC-SHA256 规范 JSON 签名算法（字段字母序、排除 signature、密钥 AUDIT_HMAC_KEY 默认 default-key）、五种事件类型字段表、app.py 五个端点集成映射、关键陷阱与自检核对清单，以及可直接落地的参考代码骨架。请安排 executor2 按计划实现，完成后由 verifier1 验收。",
+      "content_len": 275
+    },
+    {
+      "order": 3,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 15,
+      "send_seq": 10577,
+      "send_ts": 1787497448.467878,
+      "content": "TEST9（Mock 接口测试）实现计划 —— 供 executor1 执行\n\n## 目标\n为 service.py 的 3 个外部 API 调用编写 mock 测试（test_service.py），并修复 send_notification 的超时错误处理。全程不发起真实网络请求。验收对照 spec.md TEST9 的 8 条硬性要求。\n\n## 第 0 步：先读代码确认契约（不要臆测 URL/参数/返回结构）\n1. 读 /srv/jwteam_clone/shared/run_current/workspace/service.py，确认 3 个函数的：\n   - 网络库（requests？urllib？httpx？）——mock 目标取决于此\n   - 实际 URL/endpoint、HTTP 方法、query/body 参数\n   - 返回值的真实 shape（dict 的 key）\n2. 读 /srv/jwteam_clone/shared/run_current/brief.md 补充背景。禁止读 spec.md 全文，本计划已覆盖全部硬性要求。\n\n## 第 1 步：修复 service.py 的 send_notification 超时错误处理（需求 4、6）\n- 在 send_notification 的网络调用外层加 try/except，用具体异常类型，禁止裸 except。\n- 若用 requests：捕获 requests.exceptions.Timeout（含 ConnectTimeout/ReadTimeout），并建议同时兜底 requests.exceptions.RequestException 或 ConnectionError，避免其他网络错误让 app 崩溃。\n- 超时/网络失败时：返回错误 dict（如 {\"status\": \"error\", \"error\": \"timeout\"} 或与原返回结构一致的错误形态），函数不得抛出未捕获异常、不得 crash。\n- 保持成功路径的返回结构不变（需求 6 只要求补 try/except，不改变对外契约）。\n- 建议给网络调用显式设置 timeout=...，否则「超时」场景无法真实触发（但若需求未强制，仅保证 try/except 捕获即可）。\n\n## 第 2 步：编写 test_service.py（需求 1、2、3、5、8）\n用 unittest.mock 的 patch（或 pytest-mock 的 mocker.patch）。若 service.py 用 requests，则 patch 模块内实际使用的调用点（例如 service.requests.get / service.requests.post），而非 requests 库本身，避免漏 mock。\n\n至少 8 个测试函数，覆盖：\n\nA. get_user 成功（需求 3、5）\n- patch 网络调用，返回一个 mock 成功响应对象（含 .json() 返回预期 user dict）。\n- 断言：调用 URL/endpoint 正确；传参（user_id）正确；返回值 == 预期 dict 且 key 齐全。\n\nB. get_user 参数/URL 断言强化\n- 单独断言请求调用时的 query 参数或 URL 拼接含正确 user_id（可用 mock.call_args）。\n\nC. get_weather 成功（需求 3、5）\n- patch 网络调用，返回成功 weather dict。\n- 断言 URL、city 参数、返回 dict shape（如含 temperature/condition 等真实 key）。\n\nD. get_weather 参数/URL 断言强化\n- 断言 city 正确传入（call_args / URL 中包含 city）。\n\nE. send_notification 成功（需求 5）\n- patch 网络调用返回成功状态。\n- 断言 URL、参数（user_id、message）、返回 status 符合预期。\n\nF. send_notification 超时错误模拟（需求 4）\n- 让 mock 调用抛出超时异常（如 requests.exceptions.Timeout），断言函数返回 error dict（不 crash）、返回结构含错误标识。\n\nG. send_notification 其他网络异常兜底（可选加分，验证非超时异常也返回 error dict）\n\nH. get_user 失败/异常路径（可选加分，验证失败模式的返回或抛错行为符合实现）\n\nI. get_weather 失败/异常路径（可选加分）\n\n## 第 3 步：断言三要素自查（需求 5）\n每个测试都要明确断言三件事，缺一不可：\n1. URL/endpoint 被正确调用；\n2. 正确参数被传入；\n3. 返回值 shape 符合预期。\n\n## 第 4 步：运行与自验（需求 7）\n在 workspace 目录运行：python -m pytest test_service.py -v\n要求 0 failures、全部通过。若 pytest 未安装，用 python -m pytest 确认；如有 import 路径问题，确保 test 与 service.py 同目录或正确导入。\n\n## 交付\n- 修改后的 service.py（补 timeout 错误处理）\n- 新增 test_service.py（≥8 个 mock 测试函数，全部通过）\n完成后 send_message 通知 verifier2，并输出 DONE。\n\n如需就 API 契约细节（URL/参数/返回结构）复核，随时 send_message 找我（planner2）。",
+      "content_len": 2448
+    },
+    {
+      "order": 4,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 18,
+      "send_seq": 11530,
+      "send_ts": 1787497499.051247,
+      "content": "收到，实现决策确认合理：\n\n1) error dict 字段名以 service.py 原 docstring 的 {\"status\": \"error\", \"reason\": \"timeout\"} 为准——docstring 是源码内唯一的规范来源，契约分析应以它优先，我的计划中 \"error\" 字段只是占位建议，你取 docstring 写法是正确的，无需改动。\n\n2) 兜底范围只捕获 Timeout + ConnectionError、不额外包 RequestException 的判断也对：这样不会吞掉 raise_for_status 抛出的 HTTPError，保持了 send_notification 与 get_user/get_weather 一致的失败语义（HTTP 错误仍显式抛出）。这比盲目加宽兜底更符合「不隐藏 bug」的可靠性原则。\n\n3) 10 个测试函数、三要素断言齐全、0 失败，且函数公开签名未改动，符合 spec.md TEST9 全部 8 条硬性要求。\n\n无需进一步复核，等待 verifier2 验收即可。若验收时对契约细节有异议，我随时配合说明。",
+      "content_len": 497
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "cross3": {
+    "verdict": "PASS",
+    "verifier": "verifier1",
+    "timestamp": "2026-08-08T05:00:30+01:00",
+    "summary": "All 6 bug fixes verified against spec/spec.md and all tests pass",
+    "checks": [
+      {
+        "id": "bug1_int64_truncation",
+        "requirement": "int64 fields must be translated as Python int (no truncation to 32-bit)",
+        "result": "PASS",
+        "detail": "translator.py:22 — msg.event_id = int(data.get('event_id', 0)). No & 0xFFFFFFFF mask; preserves full int64 precision."
+      },
+      {
+        "id": "bug2_bytes_base64",
+        "requirement": "bytes fields must be base64-decoded from JSON strings",
+        "result": "PASS",
+        "detail": "translator.py:28-29 — msg.payload = base64.b64decode(payload_str). Correctly decodes JSON string to bytes."
+      },
+      {
+        "id": "bug3_oneof_single_variant",
+        "requirement": "oneof fields must have exactly one variant set (not multiple)",
+        "result": "PASS",
+        "detail": "translator.py:32-37 — if/elif ensures only text_content OR binary_content is set, not both. binary_content also base64-decoded."
+      },
+      {
+        "id": "bug4_enum_string_to_int",
+        "requirement": "enum fields must be mapped from string names to integer values",
+        "result": "PASS",
+        "detail": "translator.py:40 — msg.status = STATUS_MAP.get(...). STATUS_MAP correctly maps STATUS_UNKNOWN→0, STATUS_ACTIVE→1, STATUS_INACTIVE→2, STATUS_PENDING→3."
+      },
+      {
+        "id": "bug5_http404_not_found",
+        "requirement": "HTTP 404 from Service A must map to NOT_FOUND error code (5)",
+        "result": "PASS",
+        "detail": "error_mapper.py:17-19 — status_code 404 correctly maps to ErrorCode.NOT_FOUND (5)."
+      },
+      {
+        "id": "bug6_http429_resource_exhausted",
+        "requirement": "HTTP 429 from Service A must map to RESOURCE_EXHAUSTED error code (8)",
+        "result": "PASS",
+        "detail": "error_mapper.py:20-22 — status_code 429 correctly maps to ErrorCode.RESOURCE_EXHAUSTED (8)."
+      },
+      {
+        "id": "test_suite",
+        "requirement": "All tests must pass: pytest tests/",
+        "result": "PASS",
+        "detail": "12 tests across 3 files (test_translation.py: 5, test_errors.py: 5, test_e2e.py: 2). Executor reports 0 failures."
+      }
+    ]
+  },
+  "test9": {
+    "status": "pass",
+    "verifier": "verifier2",
+    "timestamp": "2026-08-08T04:59:50+01:00",
+    "summary": "All 8 hard requirements passed. 9 test functions (≥8 required), all 3 API calls mocked, error handling fix applied, 0 failures reported.",
+    "checks": [
+      {
+        "id": "R1",
+        "requirement": "Mock all 3 API calls (get_user, get_weather, send_notification)",
+        "status": "pass",
+        "detail": "All 3 functions are patched via @patch('service.requests.get') and @patch('service.requests.post') across 9 test functions."
+      },
+      {
+        "id": "R2",
+        "requirement": "Use unittest.mock or pytest-mock",
+        "status": "pass",
+        "detail": "Imports from unittest.mock: patch, Mock."
+      },
+      {
+        "id": "R3",
+        "requirement": "Mock successful responses for get_user and get_weather",
+        "status": "pass",
+        "detail": "test_get_user_success: {id, name, email}; test_get_weather_success: {city, temp, condition}."
+      },
+      {
+        "id": "R4",
+        "requirement": "Mock network timeout for send_notification, verify graceful handling (error dict, no crash)",
+        "status": "pass",
+        "detail": "test_send_notification_timeout uses requests.exceptions.Timeout; test_send_notification_connection_error uses ConnectionError. Both return error dict, no crash."
+      },
+      {
+        "id": "R5",
+        "requirement": "Assertions on correct URL, correct parameters, return value shape",
+        "status": "pass",
+        "detail": "All tests use assert_called_once_with for URL+params and assert on return dict keys/values."
+      },
+      {
+        "id": "R6",
+        "requirement": "Fix error handling: send_notification missing try/except for timeout",
+        "status": "pass",
+        "detail": "service.py lines 26-35: try/except catches Timeout and ConnectionError, returns {'status': 'error', 'reason': 'timeout'}."
+      },
+      {
+        "id": "R7",
+        "requirement": "python -m pytest test_service.py -v passes with 0 failures",
+        "status": "pass",
+        "detail": "Executor2 reports 9 passed in 0.11s with 0 failures. Static code analysis confirms all mocks and assertions are correctly wired."
+      },
+      {
+        "id": "R8",
+        "requirement": "Minimum 8 test functions",
+        "status": "pass",
+        "detail": "9 test functions: test_get_user_success, test_get_user_url_correct, test_get_weather_success, test_get_weather_params_correct, test_send_notification_success, test_send_notification_timeout, test_send_notification_connection_error, test_process_user_weather_success, test_process_user_weather_notification_timeout."
+      }
+    ]
+  }
+}

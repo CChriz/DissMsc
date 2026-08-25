@@ -1,0 +1,160 @@
+{
+  "overall": "PASS",
+  "score": 1.0,
+  "score_formula": "(12/12 * 0.6) + (5/5 * 0.3) + (3/3 * 0.1)",
+  "must_passed": 12,
+  "must_total": 12,
+  "should_passed": 5,
+  "should_total": 5,
+  "may_passed": 3,
+  "may_total": 3,
+  "test_total": 15,
+  "test_passed": 15,
+  "test_failed": 0,
+  "test_output": "============================= test session starts ==============================\nplatform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0\ncollected 15 items\n\ntests/test_protocol.py::test_set_returns_ok PASSED                       [  6%]\ntests/test_protocol.py::test_get_existing_key PASSED                     [ 13%]\ntests/test_protocol.py::test_get_missing_key PASSED                      [ 20%]\ntests/test_protocol.py::test_del_existing_key PASSED                     [ 26%]\ntests/test_protocol.py::test_keys_lists_all PASSED                       [ 33%]\ntests/test_protocol.py::test_count_after_sets PASSED                     [ 40%]\ntests/test_protocol.py::test_exists_true PASSED                          [ 46%]\ntests/test_protocol.py::test_exists_false PASSED                         [ 53%]\ntests/test_protocol.py::test_flush_clears_store PASSED                   [ 60%]\ntests/test_protocol.py::test_unknown_command PASSED                      [ 66%]\ntests/test_protocol.py::test_key_too_long PASSED                         [ 73%]\ntests/test_protocol.py::test_value_too_large PASSED                      [ 80%]\ntests/test_protocol.py::test_store_full PASSED                           [ 86%]\ntests/test_protocol.py::test_store_full_allows_update PASSED             [ 93%]\ntests/test_protocol.py::test_append_to_existing PASSED                   [100%]\n\n======================== 15 passed, 1 warning in 0.07s =========================",
+  "requirements": [
+    {
+      "id": "M1",
+      "level": "MUST",
+      "title": "SET <key> <value> stores the value",
+      "verdict": "PASS",
+      "evidence": "protocol.py _set() at line 163; test_set_returns_ok passes"
+    },
+    {
+      "id": "M2",
+      "level": "MUST",
+      "title": "GET <key> returns value or ERR key_not_found",
+      "verdict": "PASS",
+      "evidence": "protocol.py _get() at line 191; test_get_existing_key and test_get_missing_key pass"
+    },
+    {
+      "id": "M3",
+      "level": "MUST",
+      "title": "DEL <key> removes key or returns ERR key_not_found",
+      "verdict": "PASS",
+      "evidence": "protocol.py _del() at line 206; test_del_existing_key passes; code returns ERR key_not_found for missing keys"
+    },
+    {
+      "id": "M4",
+      "level": "MUST",
+      "title": "KEYS lists all stored keys, one per line, terminated by END",
+      "verdict": "PASS",
+      "evidence": "protocol.py _keys() at line 223; test_keys_lists_all passes"
+    },
+    {
+      "id": "M5",
+      "level": "MUST",
+      "title": "COUNT returns COUNT <n>",
+      "verdict": "PASS",
+      "evidence": "protocol.py _count() at line 231; test_count_after_sets passes"
+    },
+    {
+      "id": "M6",
+      "level": "MUST",
+      "title": "EXISTS <key> returns TRUE or FALSE",
+      "verdict": "PASS",
+      "evidence": "protocol.py _exists() at line 236; test_exists_true and test_exists_false pass"
+    },
+    {
+      "id": "M7",
+      "level": "MUST",
+      "title": "FLUSH clears all keys and returns OK",
+      "verdict": "PASS",
+      "evidence": "protocol.py _flush() at line 250; test_flush_clears_store passes"
+    },
+    {
+      "id": "M8",
+      "level": "MUST",
+      "title": "OK returned for successful SET and DEL",
+      "verdict": "PASS",
+      "evidence": "_set returns 'OK' (line 189), _del returns 'OK' (line 221); verified by test_set_returns_ok and test_del_existing_key"
+    },
+    {
+      "id": "M9",
+      "level": "MUST",
+      "title": "ERR unknown_command for unrecognized commands",
+      "verdict": "PASS",
+      "evidence": "execute() line 74 returns ERROR_UNKNOWN_COMMAND; test_unknown_command passes"
+    },
+    {
+      "id": "M10",
+      "level": "MUST",
+      "title": "Keys > 64 chars rejected with ERR key_too_long",
+      "verdict": "PASS",
+      "evidence": "_check_key_length() at line 123; MAX_KEY_LENGTH=64; test_key_too_long passes (69-char key rejected)"
+    },
+    {
+      "id": "M11",
+      "level": "MUST",
+      "title": "Values > 1024 chars rejected with ERR value_too_large",
+      "verdict": "PASS",
+      "evidence": "_check_value_size() at line 129; MAX_VALUE_SIZE=1024; test_value_too_large passes (1029-char value rejected)"
+    },
+    {
+      "id": "M12",
+      "level": "MUST",
+      "title": "Store full (100 keys) rejects new SET with ERR store_full, allows updates",
+      "verdict": "PASS",
+      "evidence": "_check_store_full() at line 135; MAX_KEYS=100; test_store_full and test_store_full_allows_update pass"
+    },
+    {
+      "id": "S1",
+      "level": "SHOULD",
+      "title": "MSET <k1> <v1> ... sets multiple keys atomically, returns OK <n>",
+      "verdict": "PASS",
+      "evidence": "protocol.py _mset() at line 258; two-phase atomic write; returns f'OK {len(pairs)}'"
+    },
+    {
+      "id": "S2",
+      "level": "SHOULD",
+      "title": "MGET <k1> <k2> ... returns values one per line, NIL for missing, END terminated",
+      "verdict": "PASS",
+      "evidence": "protocol.py _mget() at line 300; returns value or 'NIL' per key, terminated by END"
+    },
+    {
+      "id": "S3",
+      "level": "SHOULD",
+      "title": "TTL <key> returns remaining seconds, -1 if no expiry, ERR key_not_found",
+      "verdict": "PASS",
+      "evidence": "protocol.py _ttl() at line 315; returns int(expiry - time.time()) or '-1'"
+    },
+    {
+      "id": "S4",
+      "level": "SHOULD",
+      "title": "SETEX <key> <seconds> <value> sets with expiration",
+      "verdict": "PASS",
+      "evidence": "protocol.py _setex() at line 335; stores expiry = time.time() + seconds; _is_expired() handles cleanup"
+    },
+    {
+      "id": "S5",
+      "level": "SHOULD",
+      "title": "APPEND <key> <value> appends or creates, returns OK <new_length>",
+      "verdict": "PASS",
+      "evidence": "protocol.py _append() at line 356; test_append_to_existing passes; returns f'OK {len(self._data[key])}'"
+    },
+    {
+      "id": "Y1",
+      "level": "MAY",
+      "title": "RENAME <old_key> <new_key> renames key, OK or ERR key_not_found",
+      "verdict": "PASS",
+      "evidence": "protocol.py _rename() at line 391; transfers value and TTL; returns 'OK'"
+    },
+    {
+      "id": "Y2",
+      "level": "MAY",
+      "title": "TYPE <key> returns STRING or INTEGER, ERR key_not_found",
+      "verdict": "PASS",
+      "evidence": "protocol.py _type() at line 417; returns 'INTEGER' if int(value) succeeds, else 'STRING'"
+    },
+    {
+      "id": "Y3",
+      "level": "MAY",
+      "title": "DUMP returns all key=value pairs one per line, END terminated",
+      "verdict": "PASS",
+      "evidence": "protocol.py _dump() at line 437; returns f'{k}={v}' per key, terminated by END"
+    }
+  ],
+  "summary": "All 20 requirements (12 MUST + 5 SHOULD + 3 MAY) verified as PASS. All 15 tests pass. Implementation covers the full specification with correct limit values (MAX_KEY_LENGTH=64, MAX_VALUE_SIZE=1024, MAX_KEYS=100), proper error codes, atomic MSET, lazy TTL expiry, and all optional MAY features (RENAME, TYPE, DUMP). Score: 1.0 (100%).",
+  "verified_by": "verifier2",
+  "verified_at": "2026-08-09T08:21:00+01:00"
+}

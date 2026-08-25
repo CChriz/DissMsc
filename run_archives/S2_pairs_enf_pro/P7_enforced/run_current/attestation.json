@@ -1,0 +1,104 @@
+{
+  "pipe3_stream_processing": {
+    "verifier": "verifier1",
+    "verdict": "PASS",
+    "timestamp": "2026-08-08T14:46:00+01:00",
+    "summary": "All 3 serialization mismatch bugs have been correctly fixed. All 10 tests pass substantively (as reported by executor1 and verified against source).",
+    "bugs": [
+      {
+        "id": "Bug 1 — Datetime Serialization",
+        "component": "producer.py",
+        "requirement": "Producer must use .isoformat() for datetime fields (ISO 8601 'T'-separated), instead of default=str (space-separated).",
+        "implementation": "Added json_serializer() function: calls obj.isoformat() for datetime instances, falls back to str() otherwise. json.dumps(data, default=json_serializer) replaces json.dumps(data, default=str).",
+        "verdict": "PASS",
+        "evidence": "json_serializer() correctly calls obj.isoformat() for datetime (line 18). TestBug1DatetimeFormat (3 tests) covers: T-separator presence, fromisoformat() roundtrip, and processor compatibility."
+      },
+      {
+        "id": "Bug 2 — Envelope Stripping",
+        "component": "processor.py",
+        "requirement": "Processor must emit bare JSON objects, not wrapped in {\"data\": <payload>} envelope. Sink expects direct field access.",
+        "implementation": "Changed from envelope = {\"data\": processed} + json.dumps(envelope, ...) to direct json.dumps(processed, ensure_ascii=False).",
+        "verdict": "PASS",
+        "evidence": "Line 56: fout.write(json.dumps(processed, ensure_ascii=False) + \"\\n\") — no envelope wrapping. TestBug2NoEnvelope (2 tests) verifies: \"data\" key not present as envelope, sink.load_processed_events() can access event[\"event_id\"] directly."
+      },
+      {
+        "id": "Bug 3 — UTF-8 Encoding",
+        "component": "processor.py",
+        "requirement": "Processor must use UTF-8 encoding instead of latin-1 for output. Non-ASCII characters (accented names, € symbol) must survive the full pipeline.",
+        "implementation": "Changed open(output_path, \"w\", encoding=\"latin-1\") to open(output_path, \"w\", encoding=\"utf-8\").",
+        "verdict": "PASS",
+        "evidence": "Line 48: encoding=\"utf-8\". TestBug3Utf8Encoding (2 tests) covers: \"Müller\" roundtrip, Euro sign (€) preservation."
+      }
+    ],
+    "tests": {
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "test_files": {
+        "tests/test_serialization.py": {
+          "tests": 7,
+          "passed": 7,
+          "coverage": "Bug1 (3 tests): T-separator, fromisoformat parseability, processor parse. Bug2 (2 tests): bare object, sink load. Bug3 (2 tests): non-ASCII roundtrip, euro sign."
+        },
+        "tests/test_pipeline.py": {
+          "tests": 3,
+          "passed": 3,
+          "coverage": "End-to-end pipeline, non-ASCII survival, multiple events count."
+        }
+      }
+    },
+    "files_reviewed": [
+      "producer.py — Bug 1 fix confirmed",
+      "processor.py — Bug 2 and Bug 3 fixes confirmed",
+      "sink.py — No changes needed (expects bare UTF-8 objects)",
+      "models.py — Unchanged (shared schema)",
+      "tests/test_serialization.py — 7 targeted tests for all 3 bugs",
+      "tests/test_pipeline.py — 3 end-to-end integration tests"
+    ],
+    "notes": "All three fixes are minimal and targeted — no unnecessary changes were introduced. The producer, processor, and sink now share consistent contracts for datetime format (ISO 8601), message structure (bare objects), and encoding (UTF-8)."
+  },
+  "lh5": {
+    "verifier": "verifier2",
+    "verdict": "PASS",
+    "timestamp": "2026-08-08T14:55:30+01:00",
+    "summary": "所有 6 步迁移按严格顺序完成，全部校验检查点通过，输出文件齐全，回滚逻辑正确实现。",
+    "checks": {
+      "steps_in_order": {
+        "status": "PASS",
+        "detail": "步骤按 strict order 执行: backup → transform_format → validate_checksums → load_new_store → verify_counts → update_references，与 spec 要求完全一致。"
+      },
+      "checkpoint_transform_format": {
+        "status": "PASS",
+        "detail": "data/transformed/ 包含 devices.jsonl 和 sensor_readings.jsonl；sensor_readings.jsonl 行数 = 60。"
+      },
+      "checkpoint_validate_checksums": {
+        "status": "PASS",
+        "detail": "checksums.json 存在，包含 'source' 和 'transformed' 两个 key；共 4 个条目，均为有效 64 位 hex SHA-256 字符串。"
+      },
+      "checkpoint_load_new_store": {
+        "status": "PASS",
+        "detail": "data/new_format/sensor_readings.jsonl 和 devices.jsonl 均存在；sensor_readings.jsonl 行数 = 60。"
+      },
+      "checkpoint_verify_counts": {
+        "status": "PASS",
+        "detail": "verification_report.json 存在；counts_match = true；source_count = dest_count = 60。"
+      },
+      "checkpoint_update_references": {
+        "status": "PASS",
+        "detail": "sensor_readings.jsonl 中所有 device_id (1-26) 均存在于 devices.jsonl (1-26)；无孤立引用。"
+      },
+      "required_output_files": {
+        "status": "PASS",
+        "detail": "migration_log.jsonl、migration_report.json、checksums.json、verification_report.json、data/backup/、data/new_format/sensor_readings.jsonl、data/new_format/devices.jsonl 全部存在且内容正确。"
+      },
+      "rollback_logic": {
+        "status": "PASS",
+        "detail": "失败时立即停止后续步骤；以逆序回滚所有已完成步骤；各步骤回滚操作与 spec 一一对应（backup→删除目录、transform_format→清空transformed/、validate_checksums→删除checksums.json、load_new_store→清空new_format/、verify_counts→删除verification_report、update_references→从backup恢复原始引用映射）。"
+      },
+      "migration_report": {
+        "status": "PASS",
+        "detail": "status='success', steps_completed 包含全部 6 步, total_steps=6, ts 为有效 ISO 时间戳。"
+      }
+    }
+  }
+}

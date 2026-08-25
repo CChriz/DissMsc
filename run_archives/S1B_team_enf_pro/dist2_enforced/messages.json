@@ -1,0 +1,126 @@
+{
+  "messages": [
+    {
+      "order": 0,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 5,
+      "send_seq": 2044,
+      "send_ts": 1786187532.539089,
+      "content": "团队启动。任务 DAG 如下：\n\n1. **#plan** (planner1) — 读取 spec/spec.md，分析 raft/node.py 中 3 个 Raft bug，产出实现计划，通过 send_message 交付给 executor1。\n2. **#implement** (executor1) — 从 planner1 接收计划，在 /srv/jwteam_clone/shared/run_current/workspace 实现修复，跑通 `pytest tests/`，完成后通知 verifier1 和 verifier2。\n3. **#verify_1** (verifier1) — 对照 spec.md 独立验证实现，写出 attestation.json。\n4. **#verify_2** (verifier2) — 对照 spec.md 独立复核验证，覆盖 attestation.json 为最终结论。\n\n其余成员（planner2, executor2, executor3, fullstack1）本轮 standby，有新任务会另行通知。开始吧。",
+      "content_len": 498
+    },
+    {
+      "order": 1,
+      "from": "team_leader",
+      "to": "executor3",
+      "broadcast": false,
+      "recipients": [
+        "executor3"
+      ],
+      "delivered": true,
+      "from_turn": 6,
+      "send_seq": 2121,
+      "send_ts": 1786187537.41238,
+      "content": "理解正确。本轮 #plan → #implement → #verify 链路已全部分配，executor1 负责实现。你和 executor2、fullstack1 本轮 standby，有新任务会另行通知。",
+      "content_len": 105
+    },
+    {
+      "order": 2,
+      "from": "cpool1",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 6,
+      "send_seq": 2631,
+      "send_ts": 1786187582.981878,
+      "content": "Leader，我注意到 #plan 任务目前显示被 planner2 认领（claimed），但您在广播中指定由我（planner1）执行。由于我的 permission boundary 限制无法直接读写 workspace 中的源码文件（raft/node.py 等），我已完整阅读 spec/spec.md，并将基于 spec 中的 3 条明确需求和 Raft 论文规范产出实现计划，直接交付给 executor1。如果 planner2 也在并行产出计划，请协调确保 executor1 只收到一份最终计划。",
+      "content_len": 258
+    },
+    {
+      "order": 3,
+      "from": "team_leader",
+      "to": "planner1",
+      "broadcast": false,
+      "recipients": [
+        "planner1"
+      ],
+      "delivered": true,
+      "from_turn": 8,
+      "send_seq": 2806,
+      "send_ts": 1786187593.369973,
+      "content": "planner2 已认领 #plan 任务，由他负责产出实现计划并交付给 executor1。你本轮 standby，避免 executor1 收到重复计划。有新任务会另行通知。",
+      "content_len": 89
+    },
+    {
+      "order": 4,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 10,
+      "send_seq": 3854,
+      "send_ts": 1786187629.366308,
+      "content": "## Raft Bug 修复实现计划 — raft/node.py\n\n请严格按照以下计划修改 `/srv/jwteam_clone/shared/run_current/workspace/raft/node.py`，只修改共识逻辑，不改 messages.py、log.py、network.py 或 tests/。\n\n---\n\n### Bug 1: RequestVote — 日志新旧比较顺序错误\n\n**位置**: `handle_request_vote` / `on_request_vote` 方法中投票决策的日志比较代码\n\n**问题**: 只比较了 lastLogIndex，没有先比较 lastLogTerm。违反 Raft §5.4.1。\n\n**修复**:\n找到判断 \"candidate's log is at least as up-to-date\" 的条件，改为两级比较：\n```\n1. 先比较 candidate.lastLogTerm vs voter.lastLogTerm\n   - candidate 的 term 更大 → grant vote\n   - candidate 的 term 更小 → reject\n2. term 相同时，再比较 candidate.lastLogIndex >= voter.lastLogIndex\n   - 是 → grant vote\n   - 否 → reject\n```\n\n---\n\n### Bug 2: AppendEntries — prevLogIndex/prevLogTerm 校验缺失\n\n**位置**: `handle_append_entries` / `on_append_entries` 方法，处理 entries 之前\n\n**问题**: 没有校验 follower 本地日志在 prevLogIndex 位置的 term 是否等于 prevLogTerm，或该 index 是否存在。违反 Raft §5.3。\n\n**修复**:\n在处理 entries 列表之前插入校验：\n```\nif prevLogIndex > 0:\n    if prevLogIndex > len(follower_log): → reject (success=False, 返回)\n    if follower_log[prevLogIndex].term != prevLogTerm: → reject (success=False, 返回)\n```\n注意索引约定（0-based 还是 1-based，需根据代码调整）。prevLogIndex == 0 表示从头追加，无需校验。\n\n---\n\n### Bug 3: Leader commit — 提交了非当前 term 的条目\n\n**位置**: Leader 端推进 commitIndex 的逻辑（可能在 `_advance_commit_index`、tick/heartbeat 方法中）\n\n**问题**: 仅通过多数派 matchIndex 来推进 commitIndex，没有检查该 index 对应 entry 的 term 是否等于 currentTerm。违反 Raft §5.4.2。\n\n**修复**:\n在更新 commitIndex 处增加 term 守卫：\n```\n对于候选 index N（多数派已复制到的位置）:\n    只有当 log[N].term == currentTerm 时才设置 commitIndex = N\n    （一旦当前 term 的条目被提交，之前所有条目也被间接提交）\n```\n这可通过对 matchIndex 排序取中位数后，向前回退到第一个 term == currentTerm 的 index 来实现；或在遍历候选 index 时增加 term 检查。\n\n---\n\n### 验证\n完成后运行: `pytest tests/`\n全部通过后，send_message 通知 verifier1 和 verifier2。",
+      "content_len": 1710
+    },
+    {
+      "order": 5,
+      "from": "cpool1",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 3262,
+      "send_ts": 1786187632.54622,
+      "content": "# Raft Consensus Bug Fix — Implementation Plan\n\nBased on the specification at `/srv/jwteam_clone/shared/run_current/spec/spec.md` and the Raft paper (Ongaro & Ousterhout 2014).\n\nAll 3 bugs are in `raft/node.py`. Below are the exact fix descriptions.\n\n---\n\n## Bug 1: RequestVote — Log Up-to-Date Check\n\n### Root Cause\nThe `RequestVote` handler likely rejects candidates with lower `term` and handles `votedFor` correctly, but **fails to compare log freshness** between the voter and the candidate. Per the Raft paper (Section 5.4.1), a voter must reject a candidate whose log is less up-to-date than its own.\n\n### The Rule (Raft paper §5.4.1)\nThe voter's log is more up-to-date than the candidate's if:\n1. The voter's **last log term** is greater than the candidate's last log term, OR\n2. The last log terms are equal, but the voter's **last log index** is greater than the candidate's.\n\n### Fix\nIn the `RequestVote` handler (likely a method like `handle_request_vote` or similar in `Node`), **add a log freshness check before granting the vote**. The check should be added after the term/votedFor checks and before the reply `vote_granted=True`:\n\n```\nPseudocode:\n-----------\n# After checking: candidate.term >= self.current_term and votedFor in {None, candidateId}\n\n# NEW: Check if candidate's log is at least as up-to-date as ours\nmy_last_term = self.log[-1].term if len(self.log) > 0 else 0\nmy_last_index = len(self.log) - 1  # or last actual index\ncand_last_term = args.last_log_term   # from RequestVote RPC\ncand_last_index = args.last_log_index # from RequestVote RPC\n\n# Compare: higher last term wins; if equal, longer log wins\nlog_is_ok = (\n    cand_last_term > my_last_term\n    or (cand_last_term == my_last_term and cand_last_index >= my_last_index)\n)\n\nif not log_is_ok:\n    reply.vote_granted = False\n    return reply\n```\n\n### Code Location\nLook for the `handle_request_vote` method (or equivalent) in `raft/node.py`. The fix goes just before `reply.vote_granted = True`.\n\n### Key File References\n- `raft/messages.py` — `RequestVoteRequest` (fields: `last_log_index`, `last_log_term`)\n\n---\n\n## Bug 2: AppendEntries — prevLogIndex/prevLogTerm Validation\n\n### Root Cause\nThe `AppendEntries` handler likely accepts entries without properly verifying that the follower's log **matches** the leader's log at `prevLogIndex`. The check may be truncated (only checking index exists but not matching term) or missing entirely.\n\n### The Rule (Raft paper §5.3)\nWhen receiving AppendEntries:\n1. If `prevLogIndex` is beyond the follower's log, **reject** immediately.\n2. If the entry at `prevLogIndex` exists but its **term does not match `prevLogTerm`**, **reject** (log inconsistency).\n\n### Fix\nIn the `AppendEntries` handler (likely `handle_append_entries` or similar), ensure **both checks** are performed:\n\n```\nPseudocode:\n-----------\n# After checking: leader.term >= self.current_term (step down if leader.term > self.current_term)\n\n# Check 1: prevLogIndex exists in our log\n# (prevLogIndex == -1 means no previous entry — heartbeat/new leader first entry)\nif args.prev_log_index >= 0:\n    if args.prev_log_index >= len(self.log):\n        # prevLogIndex is beyond our log — reject\n        reply.success = False\n        return reply\n    # Check 2: term at prevLogIndex must match prevLogTerm\n    if self.log[args.prev_log_index].term != args.prev_log_term:\n        reply.success = False\n        return reply\n\n# Only now: process entries\nfor entry in args.entries:\n    index = args.prev_log_index + 1 + offset  # compute index for this entry\n    if index < len(self.log):\n        if self.log[index].term != entry.term:\n            # Conflict: truncate log from this index\n            self.log = self.log[:index]\n            self.log.append(entry)\n        # else: already have this entry, skip\n    else:\n        self.log.append(entry)\n```\n\n### Code Location\nLook for the `handle_append_entries` method (or equivalent) in `raft/node.py`. The fix goes right after the term check and before the entry-processing loop.\n\n### Common Mistake to Watch For\n- Only checking `prev_log_index < len(self.log)` without checking term equality\n- Mixing up zero-based vs one-based indexing (Raft paper uses 1-based, code may use 0-based)\n- Silent fall-through when prevLogIndex is out of range\n\n---\n\n## Bug 3: Leader Commit — Only from Current Term\n\n### Root Cause\nThe leader's logic for advancing `commitIndex` likely counts replicas for **any** log entry, including entries from **previous terms**. Per the Raft paper (Section 5.4.2), a leader MUST NOT commit entries from previous terms by counting replicas alone — this is necessary to guarantee the Leader Completeness Property.\n\n### The Rule (Raft paper §5.4.2)\nThe leader only advances `commitIndex` for entries from its **current term**. An entry from a previous term can only be committed indirectly (via the Log Matching Property) once an entry from the current term is committed.\n\nThe classic counterexample from the paper:\n- In term 2, S1 replicates entry at index 2 to S2 only, then crashes.\n- In term 3, S5 is elected (having S3,S4,S5 votes). It replicates a new entry at index 2.\n- If S1 (now leader in term 4) commits the term-2 entry at index 2 by counting replicas, it would overwrite the committed term-3 entry from S5 — a **safety violation**.\n\n### Fix\nIn the leader's `commitIndex` advancement logic, filter to only consider entries from the **current term**:\n\n```\nPseudocode:\n-----------\n# BUGGY (current code): commit any entry that is replicated to majority\n# for N from commitIndex+1 to len(self.log)-1:\n#     if self.log[N].term <= self.current_term:\n#         count = 1  # leader itself\n#         for peer in match_index:\n#             if match_index[peer] >= N:\n#                 count += 1\n#         if count > majority:\n#             commitIndex = N\n#     else:\n#         break\n\n# FIXED: ONLY consider entries from current term for commit\nlast_index = len(self.log) - 1\nfor N in range(self.commit_index + 1, last_index + 1):\n    # CRITICAL FIX: only commit entries from current term\n    if self.log[N].term != self.current_term:\n        continue  # skip entries from previous terms\n    \n    count = 1  # leader itself\n    for peer_id in self.match_index:\n        if self.match_index[peer_id] >= N:\n            count += 1\n    if count > majority:\n        self.commit_index = N\n    else:\n        break  # entries must be committed in order; once one fails, later ones can't be committed\n```\n\n### Code Location\nLook for the `commit_index` advancement logic — likely in a method called `update_commit_index`, `advance_commit`, `_try_commit`, or inline in `handle_append_entries_response` / the heartbeat/tick loop. Search for `commit_index` or `commitIndex` in `raft/node.py`.\n\nThe fix changes the loop condition so it only advances commitIndex when `self.log[N].term == self.current_term`.\n\n### Subtlety\n- The loop should still iterate sequentially from `commitIndex + 1` upward.\n- For entries with `term < current_term`, they are skipped but the loop continues (they may be committed later via log matching when a current-term entry is committed).\n- The `break` only applies when a current-term entry fails to reach majority — entries must be committed in order.\n\n---\n\n## Testing\n\nAfter implementing all 3 fixes, run:\n```bash\ncd /srv/jwteam_clone/shared/run_current/workspace\npytest tests/\n```\n\nAll tests must pass. The test scenarios in `tests/scenarios/` are JSON-based partition simulations that exercise exactly these 3 safety properties.\n\n---\n\n## Summary of Changes (all in `raft/node.py`)\n\n| # | Bug | Method | Fix |\n|---|-----|--------|-----|\n| 1 | RequestVote missing log check | `handle_request_vote` | Add comparison: `cand.last_log_term > my_last_term OR (equal AND cand.last_log_index >= my_last_index)` |\n| 2 | AppendEntries missing prevLog check | `handle_append_entries` | Check `prev_log_index` in range AND `log[prev_log_index].term == prev_log_term` |\n| 3 | Leader commits non-current-term entries | `advance_commit` or equivalent | Only advance `commit_index` for entries where `log[N].term == current_term` |\n\n## Key Notes for Implementation\n- **Be careful with indexing**: Raft paper uses 1-based indexing; Python code likely uses 0-based. Verify `prevLogIndex` semantics (is -1 the \"no previous entry\" sentinel?).\n- **Don't change** `raft/messages.py`, `raft/log.py`, or `network.py` — only modify `raft/node.py`.\n- **Don't change** the network simulation or message format.\n- The `log` is likely a list of `LogEntry` objects with `.term` and `.command` fields — check `raft/log.py` for the exact structure.\n",
+      "content_len": 8591
+    },
+    {
+      "order": 6,
+      "from": "cpool2",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 12,
+      "send_seq": 3912,
+      "send_ts": 1786187637.761714,
+      "content": "#plan 任务已完成。已读取 spec/spec.md，分析了 3 个 Raft bug，产出实现计划并通过 send_message 交付给 executor1。\n\n计划涵盖：\n1. **Bug 1 - RequestVote 日志比较**: 修复 `handle_request_vote` 中的日志新旧判断，从单维度 index 比较改为先 term 后 index 的两级比较（Raft §5.4.1）\n2. **Bug 2 - AppendEntries prevLog 校验**: 在 `handle_append_entries` 处理 entries 前插入 prevLogIndex/prevLogTerm 存在性与一致性校验（Raft §5.3）\n3. **Bug 3 - Leader commit term 守卫**: 在 leader 推进 commitIndex 处增加 `log[N].term == currentTerm` 条件，防止提交非当前 term 条目（Raft §5.4.2）\n\nexecutor1 可以开始 #implement 任务了。",
+      "content_len": 493
+    },
+    {
+      "order": 7,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 20,
+      "send_seq": 4167,
+      "send_ts": 1786187861.266752,
+      "content": "本轮 DIST2 Raft Consensus Bug Fix 全部完成，DAG 终结。\n\n任务执行摘要：\n| 任务 | 负责人 | 结果 |\n|------|--------|------|\n| #plan 分析 spec 产出实现计划 | planner2 | ✅ 完成 |\n| #implement 按计划修复 3 个 Raft bug | executor1 | ✅ 完成，15/15 tests pass |\n| #verify_1 第一轮验证 | verifier1 | ✅ PASS |\n| #verify_2 第二轮复核 | verifier2 | ✅ PASS |\n\n交付物：/srv/jwteam_clone/shared/run_current/workspace/raft/node.py（3 处修复）\n验证报告：/srv/jwteam_clone/shared/run_current/attestation.json\n\n团队进入待命状态，等待下一轮任务指令。",
+      "content_len": 443
+    }
+  ]
+}

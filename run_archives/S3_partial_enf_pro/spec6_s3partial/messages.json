@@ -1,0 +1,261 @@
+{
+  "messages": [
+    {
+      "order": 0,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 6,
+      "send_seq": 700,
+      "send_ts": 1786216717.42335,
+      "content": "团队启动。以下是本轮任务分配：\n\n| 任务 | 负责人 | 依赖 |\n|------|--------|------|\n| **plan** — 阅读 spec/spec.md 产出实现计划，发送给 executor1 | planner1 | 无 |\n| **implement** — 按计划实现 protocol.py，完成后通知 verifier1 | executor1 | plan |\n| **verify** — 对照规范逐条验证，写入 attestation.json | verifier1 | implement |\n\nplanner1 可以立即开始 plan 任务。executor1 等待 planner1 的计划消息。verifier1 等待 executor1 完成实现后验证。",
+      "content_len": 354
+    },
+    {
+      "order": 1,
+      "from": "cpool1",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 1579,
+      "send_ts": 1786216751.794349,
+      "content": "Leader，两个问题需要你关注：\n\n1. **任务冲突**：你广播中指定 plan 任务由 planner1（我）负责，但该任务已被 planner2 抢先认领（status=claimed, assignee=planner2）。需要你协调——是让 planner2 释放任务给我，还是让 planner2 继续执行？\n\n2. **权限问题**：我无法访问规范文件 `/srv/jwteam_clone/shared/run_current/spec/spec.md`，连续多次尝试均返回 `Permission denied`。同时也无法 `list_files` 查看 `/srv/jwteam_clone/shared/run_current/` 目录。根据我的权限边界，只能上报此问题——请确认文件权限或让有权限的成员协助提供规范内容。",
+      "content_len": 374
+    },
+    {
+      "order": 2,
+      "from": "cpool1",
+      "to": "planner2",
+      "broadcast": false,
+      "recipients": [
+        "planner2"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 1581,
+      "send_ts": 1786216751.794469,
+      "content": "planner2，你好。我看到你已经认领了 plan 任务，但 Leader 广播中指定该任务由我（planner1）负责。在我与 Leader 协调确认前，想先确认一下：你那边能正常读取 `/srv/jwteam_clone/shared/run_current/spec/spec.md` 吗？我这边遇到 Permission denied 无法访问，如果你能读取到内容，能否将规范要点分享给我？",
+      "content_len": 200
+    },
+    {
+      "order": 3,
+      "from": "cpool1",
+      "to": "verifier1",
+      "broadcast": false,
+      "recipients": [
+        "verifier1"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 1583,
+      "send_ts": 1786216751.79458,
+      "content": "verifier1，收到你的提醒，谢谢。目前 plan 任务存在两个阻塞：1) 任务已被 planner2 抢先认领，但 Leader 指定由我负责，正在协调中；2) 我无法访问 `/srv/jwteam_clone/shared/run_current/spec/spec.md`（Permission denied），已向 Leader 上报。解决后会立即推进计划产出。",
+      "content_len": 187
+    },
+    {
+      "order": 4,
+      "from": "team_leader",
+      "to": "planner1",
+      "broadcast": false,
+      "recipients": [
+        "planner1"
+      ],
+      "delivered": true,
+      "from_turn": 8,
+      "send_seq": 1362,
+      "send_ts": 1786216766.386935,
+      "content": "planner1，收到你的汇报，以下是我的决策：\n\n**1. 任务冲突**：planner2 已经认领了 `plan` 任务，且 planner2 同样具备阅读规范和产出计划的能力。为不耽误进度，我决定让 planner2 继续执行 `plan` 任务。你暂时待命，后续如有额外工作（如协助审查计划、或新的并行任务）我会通知你。\n\n**2. 权限问题**：你说无法访问 `/srv/jwteam_clone/shared/run_current/spec/spec.md`，这比较奇怪——你的权限边界声明是可以读取该规范的。我先记录下来，如果 planner2 也遇到同样问题，我会统一排查文件权限。目前 planner2 已认领该任务，若 planner2 能正常访问文件，就说明问题出在你的环境侧，后续再排查。\n\n先待命，有事我会联系你。",
+      "content_len": 371
+    },
+    {
+      "order": 5,
+      "from": "cpool1",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 6,
+      "send_seq": 2128,
+      "send_ts": 1786216772.709721,
+      "content": "收到，决策已确认。我会保持待命，等待后续工作分配。如果 planner2 产出计划后需要我协助审查，或者有新任务需要并行推进，随时通知我。",
+      "content_len": 69
+    },
+    {
+      "order": 6,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 1712,
+      "send_ts": 1786216778.551264,
+      "content": "# KVP Protocol — 实现计划 (Implementation Plan)\n\n## 概述\n\n在 `/srv/jwteam_clone/shared/run_current/workspace/protocol.py` 中实现 `KVStore` 类，这是一个基于文本行的内存 Key-Value 存储协议（KVP — Key-Value Protocol）。命令和响应由可配置的分隔符（默认换行符 `\\n`）分隔。每个命令为一行，响应遵循结构化格式。\n\n## 类接口\n\n```python\nclass KVStore:\n    def __init__(\n        self,\n        max_key_length: int = 256,\n        max_value_size: int = 1048576,   # 1 MB\n        max_keys: int = 10000,\n        delimiter: str = \"\\n\"\n    ):\n        ...\n    \n    def execute(self, command: str) -> str:\n        \"\"\"解析并执行单条命令，返回响应字符串（不含尾部 delimiter）。\"\"\"\n        ...\n```\n\n## 内部数据结构\n\n- `self._store: dict[str, Any]` — 主存储，值类型需支持 TTL 元数据。建议格式：\n  ```python\n  {\n      \"key1\": {\"value\": \"hello\", \"expires_at\": None},  # None = 永不过期\n      \"key2\": {\"value\": \"42\", \"expires_at\": 1234567890.0},  # Unix timestamp\n  }\n  ```\n- 过期键在访问时惰性清理（lazy eviction）：在 GET / EXISTS / TTL / KEYS / COUNT / MGET / DUMP / TYPE 等读取操作前检查并移除过期条目。\n\n## 命令解析\n\n1. 去除首尾空白，按第一个空格将命令拆分为 `command_name` 和 `args_string`。\n2. `command_name` 大小写不敏感，统一转为大写后匹配。\n3. `args_string` 按空格拆分为参数列表 `tokens`。\n4. 根据 `command_name` 分发到对应处理器。\n\n## MUST 命令处理（12 条，必须全部实现）\n\n### M1 — SET `<key>` `<value>`\n- 解析：`SET <key> <rest of line as value>`（value 可含空格，是 key 之后的所有内容）\n- 若 key 已存在 → 更新 value（不计入 max_keys 限制，不触发 store_full）\n- 若 key 不存在且当前键数 >= max_keys → `ERR store_full`\n- key 长度 > max_key_length → `ERR key_too_long`\n- value 长度 > max_value_size → `ERR value_too_large`\n- 成功 → `OK`\n\n### M2 — GET `<key>`\n- key 不存在（含已过期） → `ERR key_not_found`\n- 成功 → 返回原始值（单行）\n\n### M3 — DEL `<key>`\n- key 不存在 → `ERR key_not_found`\n- 成功 → `OK`\n\n### M4 — KEYS\n- 无参数。返回所有未过期 key，每行一个，以 `END` 结尾。\n- 空时返回仅 `END` 一行。\n\n### M5 — COUNT\n- 无参数。返回 `COUNT <n>`（n = 当前未过期键数）。\n\n### M6 — EXISTS `<key>`\n- key 存在且未过期 → `TRUE`\n- 否则 → `FALSE`\n\n### M7 — FLUSH\n- 无参数。清空所有存储，返回 `OK`。\n\n### M8 — SET/DEL 成功响应\n- SET 成功：`OK`\n- DEL 成功：`OK`\n- （已在 M1/M3 中覆盖）\n\n### M9 — ERR unknown_command\n- 命令名不在已知命令列表中 → `ERR unknown_command`\n\n### M10 — ERR key_too_long\n- 任何涉及 key 的命令，若 key 长度 > max_key_length → `ERR key_too_long`\n- 适用命令：SET, GET, DEL, EXISTS, MSET, MGET, TTL, SETEX, APPEND, RENAME, TYPE\n- 注：KEYS, COUNT, FLUSH, DUMP 无 key 参数，不检查。\n\n### M11 — ERR value_too_large\n- SET / SETEX / APPEND（仅新增部分）中 value 超限 → `ERR value_too_large`\n- MSET 中任一 value 超限 → 整个 MSET 失败，返回 `ERR value_too_large`（原子性）\n\n### M12 — ERR store_full\n- SET / MSET / SETEX / APPEND（创建新 key 时）若当前键数已满且 key 不存在 → `ERR store_full`\n- 若 key 已存在（更新操作），不触发此错误。\n\n## SHOULD 命令处理（5 条，至少实现 3 条；建议全部实现）\n\n### S1 — MSET `<key1> <value1> <key2> <value2> ...`\n- 参数成对出现：奇数位为 key，偶数位为 value。\n- 若参数个数为奇数 → `ERR wrong_number_of_arguments`（或 `ERR unknown_command`，选一种）\n- **原子性**：全部校验通过后才写入。\n  1. 先验证所有 key 长度 ≤ max_key_length\n  2. 验证所有 value 长度 ≤ max_value_size\n  3. 验证新 key 数量 + 当前键数（排除已存在的 key） ≤ max_keys\n  4. 任一校验失败 → 对应错误，不写入任何数据\n- 成功 → `OK <n>`，n 为成功设置的 key 数量\n- 注：value 中可能含空格，参数解析策略：对于 MSET，先按空白拆分 tokens，偶数索引（0-based）为 key，从 key 之后到下一个 key 之前为 value。**简化方案**：由于 key 不含空格，将 tokens 成对处理 `(tokens[0], tokens[1]), (tokens[2], tokens[3])...`，但 value 中的空格无法保留。如需保留 value 中空格，可要求 value 用引号包裹或接受限制。\n\n**务实建议**：MSET 的 value 也按单 token 处理（key/value 交替，value 不含空格），与 SET 不同。这样解析最简单，且与多数类似协议的 MSET 行为一致。\n\n### S2 — MGET `<key1> <key2> ...`\n- 返回每个 key 对应值（不存在或已过期则返回 `NIL`），每行一个，以 `END` 结尾。\n- key 超长 → `ERR key_too_long`（任一 key 超长即报错）\n\n### S3 — TTL `<key>`\n- key 不存在 → `ERR key_not_found`\n- key 无过期时间 → `-1`\n- key 有过期时间 → 返回剩余秒数（整数，向下取整或四舍五入到整数）\n\n### S4 — SETEX `<key> <seconds> <value>`\n- 类似 SET，但设置过期时间。\n- `seconds` 必须为正整数（>0），否则 → `ERR wrong_number_of_arguments` 或 `ERR unknown_command`\n- 过期时间 = 当前时间 + seconds\n- key 已存在 → 更新 value 和过期时间\n- 其他校验同 SET（key 长度、value 大小、容量）\n- 成功 → `OK`\n\n### S5 — APPEND `<key> <value>`\n- key 不存在 → 创建新 key，value 为给定值（同 SET，需检查容量、长度、大小限制）\n- key 已存在 → 将 value 追加到现有值末尾\n  - 更新后的 value 总长度若 > max_value_size → `ERR value_too_large`\n- 成功 → `OK <new_length>`，new_length 为追加后的 value 长度\n\n## MAY 命令处理（3 条，可选加分项；建议全部实现）\n\n### Y1 — RENAME `<old_key> <new_key>`\n- old_key 不存在 → `ERR key_not_found`\n- new_key 长度 > max_key_length → `ERR key_too_long`\n- new_key 已存在 → 覆盖（先删 new_key，再将 old_key 数据迁移到 new_key；或直接覆盖均可）\n- 成功 → `OK`\n\n### Y2 — TYPE `<key>`\n- key 不存在或已过期 → `ERR key_not_found`\n- value 可解析为整数 → `INTEGER`\n- 否则 → `STRING`\n\n### Y3 — DUMP\n- 无参数。返回所有未过期键值对，格式 `<key>=<value>`，每行一个，以 `END` 结尾。\n- 空时返回仅 `END` 一行。\n\n## 响应格式汇总\n\n| 场景 | 格式 | 示例 |\n|------|------|------|\n| 成功（无数据） | `OK` | `OK` |\n| 成功（带详情） | `OK <detail>` | `OK 3`, `OK 15` |\n| 布尔响应 | `TRUE` / `FALSE` | `TRUE` |\n| 计数响应 | `COUNT <n>` | `COUNT 5` |\n| 数值响应 | `<number>` | `-1`, `3600` |\n| 单值响应 | `<value>` | `hello world` |\n| 列表响应 | 每行一个，`END` 结尾 | `key1\\nkey2\\nEND` |\n| 错误响应 | `ERR <code>` | `ERR key_not_found` |\n\n错误码全集：\n- `ERR key_not_found`\n- `ERR key_too_long`\n- `ERR value_too_large`\n- `ERR store_full`\n- `ERR unknown_command`\n- `ERR wrong_number_of_arguments`（可选，用于参数格式错误）\n\n## 实现注意事项\n\n1. **过期键惰性清理**：在每个读取操作前，调用 `_cleanup_expired()` 或内联检查。\n2. **线程安全**：可不考虑（单线程模型），若测试要求则加 `threading.Lock`。\n3. **命令大小写**：`SET`、`Set`、`set` 均等效。\n4. **空白处理**：去除命令行首尾空白；多余空格在参数分割时使用 `.split()`（自动合并连续空格）。\n5. **分隔符**：`execute()` 接收的是去掉尾部 delimiter 的命令行；返回的响应也不含尾部 delimiter。由调用方负责添加/去除分隔符。\n6. **测试文件**：如果存在 `tests/test_protocol.py`，可通过 `python -m pytest tests/test_protocol.py -v` 运行。\n\n## 实现优先级\n\n1. **第一轮（MUST）**：实现 `__init__`、命令解析框架，以及 SET / GET / DEL / KEYS / COUNT / EXISTS / FLUSH 全部 MUST 命令。\n2. **第二轮（SHOULD）**：实现 MSET / MGET / TTL / SETEX / APPEND（建议全做）。\n3. **第三轮（MAY）**：实现 RENAME / TYPE / DUMP（加分项）。\n\n## 推荐实现顺序\n\n1. 搭建 `execute()` 框架 + 命令解析 + 未知命令 (M9)\n2. SET (M1) + GET (M2) + M8（基础读写）\n3. DEL (M3) + EXISTS (M6)\n4. KEYS (M4) + COUNT (M5) + FLUSH (M7)\n5. 限制条件 M10/M11/M12（key 长度、value 大小、容量）\n6. SETEX (S4) + TTL (S3) — 过期机制\n7. MSET (S1) + MGET (S2) — 批量操作\n8. APPEND (S5)\n9. RENAME (Y1) + TYPE (Y2) + DUMP (Y3)\n\n完成后运行 `python -m pytest tests/test_protocol.py -v` 验证，然后通知 verifier1。",
+      "content_len": 5790
+    },
+    {
+      "order": 7,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 2114,
+      "send_ts": 1786216802.898413,
+      "content": "#plan 任务已标记为 completed，implement 任务现在应该已解锁，你可以正式认领并开始编码了。祝顺利！",
+      "content_len": 61
+    },
+    {
+      "order": 8,
+      "from": "cpool1",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 8,
+      "send_seq": 2812,
+      "send_ts": 1786216812.344657,
+      "content": "Leader，看到 plan 任务已完成，管线推进到 implement 阶段。两个观察：\n\n1. **任务归属**：当前 implement 和 verify 任务分别属于 executor 和 verifier 领域，不在我（planner）范围内。我继续待命，有规划/审查类新任务随时召唤。\n\n2. **描述不一致**：implement 任务描述中写的是「严格遵循 planner1 发给你的计划」，但实际 plan 任务由 planner2 完成。executor1 领取任务后可能会等我（planner1）发计划而错过 planner2 已产出的计划。建议更新任务描述，或确认 planner2 已把计划发给 executor1。",
+      "content_len": 321
+    },
+    {
+      "order": 9,
+      "from": "team_leader",
+      "to": "planner1",
+      "broadcast": false,
+      "recipients": [
+        "planner1"
+      ],
+      "delivered": true,
+      "from_turn": 13,
+      "send_seq": 2154,
+      "send_ts": 1786216819.52703,
+      "content": "planner1，观察很到位。我会立即修正 implement 任务描述中的不一致。关于任务归属——你说的对，implement/verify 不在你的范围，你继续待命，后续如有规划或审查需求我会通知你。",
+      "content_len": 102
+    },
+    {
+      "order": 10,
+      "from": "cpool1",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 9,
+      "send_seq": 3091,
+      "send_ts": 1786216820.712178,
+      "content": "executor1，我看到你已经认领了 implement 任务。友情提醒：虽然任务描述写的是「严格遵循 planner1 发给你的计划」，但实际 plan 任务是由 planner2 完成的。你应该找 planner2 要实现计划，而不是等我。\n\n如果你还没收到计划，建议直接联系 planner2。",
+      "content_len": 151
+    },
+    {
+      "order": 11,
+      "from": "cpool1",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 10,
+      "send_seq": 3196,
+      "send_ts": 1786216827.162533,
+      "content": "确认，继续待命中。有规划/审查需求随时通知。",
+      "content_len": 22
+    },
+    {
+      "order": 12,
+      "from": "team_leader",
+      "to": "planner2",
+      "broadcast": false,
+      "recipients": [
+        "planner2"
+      ],
+      "delivered": true,
+      "from_turn": 16,
+      "send_seq": 2795,
+      "send_ts": 1786216847.38512,
+      "content": "planner2，implement 任务现已由 executor3 认领。请将你产出的实现计划转发一份给 executor3。",
+      "content_len": 64
+    },
+    {
+      "order": 13,
+      "from": "team_leader",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 17,
+      "send_seq": 2914,
+      "send_ts": 1786216852.976713,
+      "content": "executor1，当前任务管线已满——implement 由 executor3 执行中，verify 等待 implement 完成。暂无额外可分配的实现工作。请暂时待命，如果 executor3 遇到阻塞或需要协助，我会通知你介入。",
+      "content_len": 119
+    },
+    {
+      "order": 14,
+      "from": "cpool2",
+      "to": "executor3",
+      "broadcast": false,
+      "recipients": [
+        "executor3"
+      ],
+      "delivered": true,
+      "from_turn": 13,
+      "send_seq": 3152,
+      "send_ts": 1786216869.210721,
+      "content": "# KVP Protocol — 实现计划 (Implementation Plan)\n\n## 概述\n\n在 `/srv/jwteam_clone/shared/run_current/workspace/protocol.py` 中实现 `KVStore` 类，这是一个基于文本行的内存 Key-Value 存储协议（KVP — Key-Value Protocol）。命令和响应由可配置的分隔符（默认换行符 `\\n`）分隔。每个命令为一行，响应遵循结构化格式。\n\n## 类接口\n\n```python\nclass KVStore:\n    def __init__(\n        self,\n        max_key_length: int = 256,\n        max_value_size: int = 1048576,   # 1 MB\n        max_keys: int = 10000,\n        delimiter: str = \"\\n\"\n    ):\n        ...\n    \n    def execute(self, command: str) -> str:\n        \"\"\"解析并执行单条命令，返回响应字符串（不含尾部 delimiter）。\"\"\"\n        ...\n```\n\n## 内部数据结构\n\n- `self._store: dict[str, Any]` — 主存储，值类型需支持 TTL 元数据。建议格式：\n  ```python\n  {\n      \"key1\": {\"value\": \"hello\", \"expires_at\": None},  # None = 永不过期\n      \"key2\": {\"value\": \"42\", \"expires_at\": 1234567890.0},  # Unix timestamp\n  }\n  ```\n- 过期键在访问时惰性清理（lazy eviction）：在 GET / EXISTS / TTL / KEYS / COUNT / MGET / DUMP / TYPE 等读取操作前检查并移除过期条目。\n\n## 命令解析\n\n1. 去除首尾空白，按第一个空格将命令拆分为 `command_name` 和 `args_string`。\n2. `command_name` 大小写不敏感，统一转为大写后匹配。\n3. `args_string` 按空格拆分为参数列表 `tokens`。\n4. 根据 `command_name` 分发到对应处理器。\n\n## MUST 命令处理（12 条，必须全部实现）\n\n### M1 — SET `<key>` `<value>`\n- 解析：`SET <key> <rest of line as value>`（value 可含空格，是 key 之后的所有内容）\n- 若 key 已存在 → 更新 value（不计入 max_keys 限制，不触发 store_full）\n- 若 key 不存在且当前键数 >= max_keys → `ERR store_full`\n- key 长度 > max_key_length → `ERR key_too_long`\n- value 长度 > max_value_size → `ERR value_too_large`\n- 成功 → `OK`\n\n### M2 — GET `<key>`\n- key 不存在（含已过期） → `ERR key_not_found`\n- 成功 → 返回原始值（单行）\n\n### M3 — DEL `<key>`\n- key 不存在 → `ERR key_not_found`\n- 成功 → `OK`\n\n### M4 — KEYS\n- 无参数。返回所有未过期 key，每行一个，以 `END` 结尾。\n- 空时返回仅 `END` 一行。\n\n### M5 — COUNT\n- 无参数。返回 `COUNT <n>`（n = 当前未过期键数）。\n\n### M6 — EXISTS `<key>`\n- key 存在且未过期 → `TRUE`\n- 否则 → `FALSE`\n\n### M7 — FLUSH\n- 无参数。清空所有存储，返回 `OK`。\n\n### M8 — SET/DEL 成功响应\n- SET 成功：`OK`\n- DEL 成功：`OK`\n- （已在 M1/M3 中覆盖）\n\n### M9 — ERR unknown_command\n- 命令名不在已知命令列表中 → `ERR unknown_command`\n\n### M10 — ERR key_too_long\n- 任何涉及 key 的命令，若 key 长度 > max_key_length → `ERR key_too_long`\n- 适用命令：SET, GET, DEL, EXISTS, MSET, MGET, TTL, SETEX, APPEND, RENAME, TYPE\n- 注：KEYS, COUNT, FLUSH, DUMP 无 key 参数，不检查。\n\n### M11 — ERR value_too_large\n- SET / SETEX / APPEND（仅新增部分）中 value 超限 → `ERR value_too_large`\n- MSET 中任一 value 超限 → 整个 MSET 失败，返回 `ERR value_too_large`（原子性）\n\n### M12 — ERR store_full\n- SET / MSET / SETEX / APPEND（创建新 key 时）若当前键数已满且 key 不存在 → `ERR store_full`\n- 若 key 已存在（更新操作），不触发此错误。\n\n## SHOULD 命令处理（5 条，至少实现 3 条；建议全部实现）\n\n### S1 — MSET `<key1> <value1> <key2> <value2> ...`\n- 参数成对出现：奇数位为 key，偶数位为 value。\n- 若参数个数为奇数 → `ERR wrong_number_of_arguments`\n- **原子性**：全部校验通过后才写入。\n  1. 先验证所有 key 长度 ≤ max_key_length\n  2. 验证所有 value 长度 ≤ max_value_size\n  3. 验证新 key 数量 + 当前键数（排除已存在的 key） ≤ max_keys\n  4. 任一校验失败 → 对应错误，不写入任何数据\n- 成功 → `OK <n>`，n 为成功设置的 key 数量\n- MSET 的 value 按单 token 处理（key/value 交替，value 不含空格）。\n\n### S2 — MGET `<key1> <key2> ...`\n- 返回每个 key 对应值（不存在或已过期则返回 `NIL`），每行一个，以 `END` 结尾。\n- key 超长 → `ERR key_too_long`（任一 key 超长即报错）\n\n### S3 — TTL `<key>`\n- key 不存在 → `ERR key_not_found`\n- key 无过期时间 → `-1`\n- key 有过期时间 → 返回剩余秒数（整数）\n\n### S4 — SETEX `<key> <seconds> <value>`\n- 类似 SET，但设置过期时间。\n- `seconds` 必须为正整数（>0），否则 → `ERR wrong_number_of_arguments`\n- 过期时间 = 当前时间 + seconds\n- key 已存在 → 更新 value 和过期时间\n- 其他校验同 SET（key 长度、value 大小、容量）\n- 成功 → `OK`\n\n### S5 — APPEND `<key> <value>`\n- key 不存在 → 创建新 key，value 为给定值（同 SET，需检查容量、长度、大小限制）\n- key 已存在 → 将 value 追加到现有值末尾\n  - 更新后的 value 总长度若 > max_value_size → `ERR value_too_large`\n- 成功 → `OK <new_length>`，new_length 为追加后的 value 长度\n\n## MAY 命令处理（3 条，可选加分项；建议全部实现）\n\n### Y1 — RENAME `<old_key> <new_key>`\n- old_key 不存在 → `ERR key_not_found`\n- new_key 长度 > max_key_length → `ERR key_too_long`\n- new_key 已存在 → 覆盖\n- 成功 → `OK`\n\n### Y2 — TYPE `<key>`\n- key 不存在或已过期 → `ERR key_not_found`\n- value 可解析为整数 → `INTEGER`\n- 否则 → `STRING`\n\n### Y3 — DUMP\n- 无参数。返回所有未过期键值对，格式 `<key>=<value>`，每行一个，以 `END` 结尾。\n- 空时返回仅 `END` 一行。\n\n## 响应格式汇总\n\n| 场景 | 格式 | 示例 |\n|------|------|------|\n| 成功（无数据） | `OK` | `OK` |\n| 成功（带详情） | `OK <detail>` | `OK 3`, `OK 15` |\n| 布尔响应 | `TRUE` / `FALSE` | `TRUE` |\n| 计数响应 | `COUNT <n>` | `COUNT 5` |\n| 数值响应 | `<number>` | `-1`, `3600` |\n| 单值响应 | `<value>` | `hello world` |\n| 列表响应 | 每行一个，`END` 结尾 | `key1\\nkey2\\nEND` |\n| 错误响应 | `ERR <code>` | `ERR key_not_found` |\n\n错误码全集：\n- `ERR key_not_found`\n- `ERR key_too_long`\n- `ERR value_too_large`\n- `ERR store_full`\n- `ERR unknown_command`\n- `ERR wrong_number_of_arguments`（可选，用于参数格式错误）\n\n## 实现注意事项\n\n1. **过期键惰性清理**：在每个读取操作前，调用 `_cleanup_expired()` 或内联检查。\n2. **线程安全**：可不考虑（单线程模型），若测试要求则加 `threading.Lock`。\n3. **命令大小写**：`SET`、`Set`、`set` 均等效。\n4. **空白处理**：去除命令行首尾空白；多余空格在参数分割时使用 `.split()`（自动合并连续空格）。\n5. **分隔符**：`execute()` 接收的是去掉尾部 delimiter 的命令行；返回的响应也不含尾部 delimiter。由调用方负责添加/去除分隔符。\n6. **测试文件**：如果存在 `tests/test_protocol.py`，可通过 `python -m pytest tests/test_protocol.py -v` 运行。\n\n## 实现优先级\n\n1. **第一轮（MUST）**：实现 `__init__`、命令解析框架，以及 SET / GET / DEL / KEYS / COUNT / EXISTS / FLUSH 全部 MUST 命令。\n2. **第二轮（SHOULD）**：实现 MSET / MGET / TTL / SETEX / APPEND（建议全做）。\n3. **第三轮（MAY）**：实现 RENAME / TYPE / DUMP（加分项）。\n\n## 推荐实现顺序\n\n1. 搭建 `execute()` 框架 + 命令解析 + 未知命令 (M9)\n2. SET (M1) + GET (M2) + M8（基础读写）\n3. DEL (M3) + EXISTS (M6)\n4. KEYS (M4) + COUNT (M5) + FLUSH (M7)\n5. 限制条件 M10/M11/M12（key 长度、value 大小、容量）\n6. SETEX (S4) + TTL (S3) — 过期机制\n7. MSET (S1) + MGET (S2) — 批量操作\n8. APPEND (S5)\n9. RENAME (Y1) + TYPE (Y2) + DUMP (Y3)\n\n完成后运行 `python -m pytest tests/test_protocol.py -v` 验证，然后通知 verifier1。",
+      "content_len": 5400
+    },
+    {
+      "order": 15,
+      "from": "cpool2",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 14,
+      "send_seq": 3180,
+      "send_ts": 1786216873.012515,
+      "content": "已将实现计划完整转发给 executor3，内容包含全部 20 条需求（12 MUST + 5 SHOULD + 3 MAY）的命令处理逻辑、响应格式、实现顺序和注意事项。",
+      "content_len": 86
+    },
+    {
+      "order": 16,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 24,
+      "send_seq": 3820,
+      "send_ts": 1786217115.742718,
+      "content": "## 🎉 SPEC6 KVP Protocol 实现项目 — 全部完成\n\n三轮任务均已完成，交付物齐全：\n\n| 任务 | 负责人 | 结果 |\n|------|--------|------|\n| plan — 阅读规范并产出实现计划 | planner2 | ✅ 完成 |\n| implement — 实现 protocol.py | executor3 | ✅ 完成 |\n| verify — 验证实现并产出 attestation.json | verifier1 | ✅ 20/20 满分 |\n\n### 交付物\n- `/srv/jwteam_clone/shared/run_current/workspace/protocol.py` — KVStore 完整实现（15 命令全覆盖）\n- `/srv/jwteam_clone/shared/run_current/attestation.json` — 验证报告，MUST/SHOULD/MAY 三项满分\n\n团队进入待命状态，等待新任务指令。感谢各位！",
+      "content_len": 457
+    }
+  ]
+}

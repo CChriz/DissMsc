@@ -1,0 +1,65 @@
+{
+  "messages": [
+    {
+      "order": 0,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 6,
+      "send_seq": 1383,
+      "send_ts": 1786260226.854615,
+      "content": "TEST9 Mock-Based API Testing 任务已启动。任务 DAG：\n\n1. **plan** → planner1：读取 spec/spec.md 制定计划，分别发送 test_service.py 计划给 executor1、service.py 修复计划给 executor3\n2. **implement_test**（Zone A）→ executor1：按 planner1 的计划编写 test_service.py，完成后通知 verifier1\n3. **implement_fix**（Zone B）→ executor3：按 planner1 的计划修复 service.py，完成后通知 verifier1\n4. **verify** → verifier1：运行集成测试验证全部实现，写入 attestation.json\n\n请各位认领自己的任务并开始执行。",
+      "content_len": 400
+    },
+    {
+      "order": 1,
+      "from": "cpool1",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 1537,
+      "send_ts": 1786260271.876467,
+      "content": "## Zone A：test_service.py 实现计划\n\n### 工作区\n- 文件路径：`/srv/jwteam_clone/shared/run_current/workspace/test_service.py`\n- 运行命令：`python -m pytest test_service.py -v`（必须在 workspace 目录下执行，0 failures）\n\n### 前置与导入\n```python\nimport pytest\nfrom unittest.mock import patch, Mock\nimport requests\nimport service  # 导入被测模块\n```\n\n### API 约定（基于 spec 推断，service.py 中应一致）\n\n| 函数 | HTTP 方法 | URL 模板 | 成功返回类型 |\n|---|---|---|---|\n| `get_user(user_id)` | GET | `https://api.example.com/users/{user_id}` | `dict` with `id`, `name`, `email` |\n| `get_weather(city)` | GET | `https://api.example.com/weather?city={city}` | `dict` with `city`, `temperature`, `conditions` |\n| `send_notification(user_id, message)` | POST | `https://api.example.com/notify` | `dict` with `status` |\n\n> **重要**：以上 URL/参数为推断。若 `service.py` 实际代码不同，请以实际代码为准，但必须保持 mock 与源码一致。\n\n### 测试函数清单（共 8 个，达到最小要求）\n\n---\n\n#### 1. `test_get_user_success`\n- **Mock**：`patch('service.requests.get')`，返回 `Mock(ok=True, json=lambda: {\"id\": 1, \"name\": \"Alice\", \"email\": \"alice@example.com\"})`\n- **调用**：`service.get_user(1)`\n- **断言**：\n  - `mock_get.assert_called_once()` — 验证 requests.get 被调用\n  - URL 包含 `\"users/1\"`（或等价断言）\n  - 返回值 `== {\"id\": 1, \"name\": \"Alice\", \"email\": \"alice@example.com\"}`\n\n---\n\n#### 2. `test_get_user_not_found`\n- **Mock**：`patch('service.requests.get')`，返回 `Mock(ok=False, status_code=404)`\n- **调用**：`service.get_user(999)`\n- **断言**：\n  - 返回值为错误 dict（如 `{\"error\": \"User not found\"}` 或类似结构）\n  - 不应抛出异常\n\n---\n\n#### 3. `test_get_weather_success`\n- **Mock**：`patch('service.requests.get')`，返回 `Mock(ok=True, json=lambda: {\"city\": \"Beijing\", \"temperature\": 22, \"conditions\": \"Sunny\"})`\n- **调用**：`service.get_weather(\"Beijing\")`\n- **断言**：\n  - `mock_get.assert_called_once()`\n  - URL 包含 `\"weather\"` 和 `\"Beijing\"`\n  - 返回值 `== {\"city\": \"Beijing\", \"temperature\": 22, \"conditions\": \"Sunny\"}`\n\n---\n\n#### 4. `test_get_weather_city_invalid`\n- **Mock**：`patch('service.requests.get')`，返回 `Mock(ok=False, status_code=400)`\n- **调用**：`service.get_weather(\"\")`\n- **断言**：\n  - 返回错误 dict（如 `{\"error\": \"Invalid city\"}` 或类似）\n  - 不抛异常\n\n---\n\n#### 5. `test_send_notification_success`\n- **Mock**：`patch('service.requests.post')`，返回 `Mock(ok=True, json=lambda: {\"status\": \"sent\"})`\n- **调用**：`service.send_notification(1, \"Hello\")`\n- **断言**：\n  - `mock_post.assert_called_once()`\n  - URL 包含 `\"notify\"`\n  - 请求体（json 参数）包含 `\"user_id\": 1` 和 `\"message\": \"Hello\"`\n  - 返回值 `== {\"status\": \"sent\"}`\n\n---\n\n#### 6. `test_send_notification_timeout`\n- **Mock**：`patch('service.requests.post')`，`side_effect=requests.exceptions.Timeout`\n- **调用**：`service.send_notification(1, \"test\")`\n- **断言**：\n  - 返回错误 dict（如 `{\"status\": \"error\", \"reason\": \"timeout\"}` 或类似）\n  - **不抛出异常**（关键！这就是 service.py 需要修复的 bug）\n\n---\n\n#### 7. `test_send_notification_connection_error`\n- **Mock**：`patch('service.requests.post')`，`side_effect=requests.exceptions.ConnectionError`\n- **调用**：`service.send_notification(1, \"test\")`\n- **断言**：\n  - 返回错误 dict（如 `{\"status\": \"error\", \"reason\": \"connection_error\"}` 或类似）\n  - 不抛出异常\n\n---\n\n#### 8. `test_send_notification_server_error`\n- **Mock**：`patch('service.requests.post')`，返回 `Mock(ok=False, status_code=500)`\n- **调用**：`service.send_notification(1, \"test\")`\n- **断言**：\n  - 返回错误 dict（如 `{\"status\": \"error\", \"reason\": \"server_error\"}` 或类似）\n  - 不抛异常\n\n---\n\n### 实施要点\n1. **先阅读 service.py** 确认实际的函数签名、URL 和返回结构，调整 mock URL 和断言以匹配\n2. 每个测试函数使用 `@patch` 装饰器或 `with patch(...)` 上下文管理器\n3. mock 的 `requests.get` / `requests.post` 必须 patch 在 `service` 模块的命名空间（即 `service.requests.get`），不是 `requests.get`\n4. 所有 8 个测试必须可以**独立运行**，不依赖执行顺序\n5. 写完执行 `python -m pytest test_service.py -v`，确认 8 passed, 0 failed\n\n### 完成后\n通过 `send_message(to=\"verifier1\", content=\"test_service.py 已完成，请验证\")` 通知 verifier1。",
+      "content_len": 3693
+    },
+    {
+      "order": 2,
+      "from": "cpool1",
+      "to": "executor3",
+      "broadcast": false,
+      "recipients": [
+        "executor3"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 1539,
+      "send_ts": 1786260271.876622,
+      "content": "## Zone B：service.py 修复计划\n\n### 工作区\n- 文件路径：`/srv/jwteam_clone/shared/run_current/workspace/service.py`\n- 修复后验证：`python -m pytest /srv/jwteam_clone/shared/run_current/workspace/test_service.py -v`（需等 executor1 写完测试后）\n\n### 问题诊断\n`send_notification(user_id, message)` 函数中调用 `requests.post(...)` 发生网络请求，但没有 `try/except` 包裹。当出现超时或连接失败时，异常会直接向上传播导致程序崩溃，而非优雅处理。\n\n### 修复目标\n在 `send_notification` 函数中添加 `try/except`，捕获以下两个异常并返回错误 dict：\n\n| 异常类型 | 返回的错误 dict |\n|---|---|\n| `requests.exceptions.Timeout` | `{\"status\": \"error\", \"reason\": \"timeout\"}` |\n| `requests.exceptions.ConnectionError` | `{\"status\": \"error\", \"reason\": \"connection_error\"}` |\n\n> **注意**：捕获到异常后只返回错误 dict，不要 `raise`，不要 `sys.exit()`，不要崩溃。\n\n### 修复模板\n\n**修复前的典型代码**：\n```python\ndef send_notification(user_id, message):\n    response = requests.post(\n        \"https://api.example.com/notify\",\n        json={\"user_id\": user_id, \"message\": message}\n    )\n    if response.ok:\n        return response.json()\n    else:\n        return {\"status\": \"error\", \"reason\": \"server_error\"}\n```\n\n**修复后**（将 `requests.post(...)` 部分包裹在 try 中）：\n```python\nimport requests\n\ndef send_notification(user_id, message):\n    try:\n        response = requests.post(\n            \"https://api.example.com/notify\",\n            json={\"user_id\": user_id, \"message\": message},\n            timeout=10   # 建议设置超时，否则 Timeout 可能永远不会触发\n        )\n        if response.ok:\n            return response.json()\n        else:\n            return {\"status\": \"error\", \"reason\": \"server_error\"}\n    except requests.exceptions.Timeout:\n        return {\"status\": \"error\", \"reason\": \"timeout\"}\n    except requests.exceptions.ConnectionError:\n        return {\"status\": \"error\", \"reason\": \"connection_error\"}\n```\n\n### 实施步骤\n\n1. **打开** `/srv/jwteam_clone/shared/run_current/workspace/service.py`\n2. 确认文件顶部已 `import requests`（如果没有，添加）\n3. 找到 `send_notification` 函数\n4. 将 `requests.post(...)` 调用及其响应处理逻辑包裹在 `try:` 块中\n5. 在 `try` 块后添加两个 `except` 分支（Timeout、ConnectionError），各自返回对应 error dict\n6. **建议**：给 `requests.post()` 加上 `timeout=10`（秒），否则默认无超时可能导致请求永远挂起\n7. 保存文件\n\n### 重要约束\n- **只修改 send_notification 函数**，不要改动 `get_user` 和 `get_weather`\n- 确保缩进正确（Python 对缩进敏感）\n- 函数签名不变：`send_notification(user_id, message)` → 始终返回 dict\n- 正常路径的行为不变：成功时仍返回 `response.json()`\n\n### 完成后\n通过 `send_message(to=\"verifier1\", content=\"service.py 修复已完成，请验证\")` 通知 verifier1。",
+      "content_len": 2329
+    },
+    {
+      "order": 3,
+      "from": "cpool1",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 5,
+      "send_seq": 1588,
+      "send_ts": 1786260278.577109,
+      "content": "## 计划制定完成汇报\n\n已读取 `/srv/jwteam_clone/shared/run_current/spec/spec.md`，制定了完整的两部分计划并已下发：\n\n### Zone A — test_service.py（→ executor1）\n8 个测试函数，覆盖全部 3 个 API：\n- `test_get_user_success` / `test_get_user_not_found`\n- `test_get_weather_success` / `test_get_weather_city_invalid`\n- `test_send_notification_success` / `test_send_notification_timeout`\n- `test_send_notification_connection_error` / `test_send_notification_server_error`\n\n每个测试均明确 mock 方式、调用方式、断言项（URL、参数、返回值形状）。\n\n### Zone B — service.py 修复（→ executor3）\n在 `send_notification` 中添加 try/except：\n- 捕获 `requests.exceptions.Timeout` → 返回 `{\"status\": \"error\", \"reason\": \"timeout\"}`\n- 捕获 `requests.exceptions.ConnectionError` → 返回 `{\"status\": \"error\", \"reason\": \"connection_error\"}`\n- 额外建议：给 `requests.post()` 加 `timeout=10` 参数\n- 约束：只改 send_notification，不动其他函数\n\n### 下一步\n- executor1 和 executor3 完成后各自通知 verifier1\n- verifier1 执行 `python -m pytest test_service.py -v` 并写入 attestation.json",
+      "content_len": 927
+    }
+  ]
+}

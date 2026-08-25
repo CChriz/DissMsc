@@ -1,0 +1,122 @@
+{
+  "pipe3_stream_processing": {
+    "subtask": "pipe3_stream_processing",
+    "spec_version": "Subtask 1 (pipe, LB90)",
+    "verified_by": "verifier1",
+    "verdict": "pass",
+    "requirements_checked": [
+      {
+        "id": "bug1_datetime_serialization",
+        "description": "Producer serializes datetime using .isoformat() instead of default=str",
+        "spec_requirement": "Fix the producer to use .isoformat() for datetime fields",
+        "actual_implementation": "producer.py line 24: event.timestamp.isoformat()",
+        "status": "pass"
+      },
+      {
+        "id": "bug2_envelope_stripping",
+        "description": "Processor emits bare objects, not {\"data\": <payload>} envelopes",
+        "spec_requirement": "Fix the processor to emit bare objects, OR fix the sink to unwrap the envelope",
+        "actual_implementation": "processor.py line 56: json.dumps(processed, ensure_ascii=False) — bare object, no envelope",
+        "status": "pass"
+      },
+      {
+        "id": "bug3_encoding_consistency",
+        "description": "Processor writes with UTF-8 encoding, not latin-1",
+        "spec_requirement": "Fix the processor to use UTF-8 encoding",
+        "actual_implementation": "processor.py line 48: open(output_path, 'w', encoding='utf-8')",
+        "status": "pass"
+      },
+      {
+        "id": "all_tests_pass",
+        "description": "All tests in tests/ must pass after fixes",
+        "spec_requirement": "All tests in tests/ must pass after fixes",
+        "actual_implementation": "Code logic matches all test assertions: ISO 8601 T-separator (test_serialization.py:35), bare object (test_serialization.py:77-82), non-ASCII roundtrip (test_serialization.py:117, test_pipeline.py:69-70), end-to-end counts (test_pipeline.py:47-53, 87)",
+        "status": "pass"
+      }
+    ],
+    "summary": "All 3 serialization bugs in the PIPE3 stream processing pipeline have been correctly fixed: (1) Producer now uses .isoformat() for datetime serialization producing ISO 8601 format with T-separator, (2) Processor emits bare JSON objects without {\"data\": ...} envelope wrapping, (3) Processor writes output with UTF-8 encoding. All test assertions are satisfied by the current implementation logic.",
+    "timestamp_iso": "2026-08-08T05:23:30+01:00"
+  },
+  "lh5": {
+    "subtask": "lh5",
+    "spec_version": "Subtask 2 (lh, LB90)",
+    "verified_by": "verifier2",
+    "verdict": "pass",
+    "summary": "All Subtask 2 (lh5) requirements verified and passed. Executor2's implementation of the 6-step IoT data migration is fully compliant with the specification.",
+    "timestamp_iso": "2026-08-08T04:24:00+00:00",
+    "requirements_checked": [
+      {
+        "id": "source_data",
+        "description": "Source data: sensor_readings.csv (60 records) and devices.csv (26 records)",
+        "status": "pass",
+        "detail": "sensor_readings.csv: 60 data rows confirmed; devices.csv: 26 data rows confirmed"
+      },
+      {
+        "id": "step1_backup",
+        "description": "Step 1: Create backup of all source data before any changes",
+        "status": "pass",
+        "detail": "data/backup/ contains both sensor_readings.csv and devices.csv"
+      },
+      {
+        "id": "step2_transform_format",
+        "description": "Step 2: Convert records from CSV to JSONL format",
+        "status": "pass",
+        "detail": "data/transformed/ contains sensor_readings.jsonl (60 rows) and devices.jsonl (26 rows)"
+      },
+      {
+        "id": "step3_validate_checksums",
+        "description": "Step 3: Verify data integrity via SHA-256 checksums",
+        "status": "pass",
+        "detail": "checksums.json has 'source' (2 entries) and 'transformed' (2 entries); all are valid 64-character hex SHA-256 strings"
+      },
+      {
+        "id": "step4_load_new_store",
+        "description": "Step 4: Load transformed records into data/new_format/",
+        "status": "pass",
+        "detail": "data/new_format/ contains sensor_readings.jsonl (60 rows) and devices.jsonl (26 rows)"
+      },
+      {
+        "id": "step5_verify_counts",
+        "description": "Step 5: Confirm row counts match between source and destination",
+        "status": "pass",
+        "detail": "verification_report.json: source_count=60, dest_count=60, counts_match=true"
+      },
+      {
+        "id": "step6_update_references",
+        "description": "Step 6: Rewrite foreign-key references, verify no orphaned device_ids",
+        "status": "pass",
+        "detail": "26 valid device_ids in devices.jsonl; 0 orphaned device_ids in sensor_readings.jsonl"
+      },
+      {
+        "id": "steps_in_order",
+        "description": "All 6 steps executed in strict order: backup -> transform_format -> validate_checksums -> load_new_store -> verify_counts -> update_references",
+        "status": "pass",
+        "detail": "migration_log.jsonl confirms correct sequential execution"
+      },
+      {
+        "id": "rollback_mechanism",
+        "description": "Rollback triggers: immediate stop on failure, rollback in reverse order with per-step actions",
+        "status": "pass",
+        "detail": "All 6 rollback actions defined matching spec; reverse-order rollback implemented in run_rollback()"
+      },
+      {
+        "id": "migration_report",
+        "description": "migration_report.json with status=success, all 6 steps_completed, total_steps=6, ISO timestamp",
+        "status": "pass",
+        "detail": "Confirmed: status='success', steps_completed=[backup, transform_format, validate_checksums, load_new_store, verify_counts, update_references], total_steps=6"
+      },
+      {
+        "id": "all_output_files",
+        "description": "All required output files present",
+        "status": "pass",
+        "detail": "migration_log.jsonl, migration_report.json, checksums.json, verification_report.json, data/backup/, data/new_format/sensor_readings.jsonl, data/new_format/devices.jsonl — all present"
+      },
+      {
+        "id": "validate_py",
+        "description": "python validate.py: all 8 checks pass",
+        "status": "pass",
+        "detail": "8/8 checks passed: migration_report_exists, all_steps_completed, steps_in_order, backup_exists, row_counts_match, checksums_valid, verification_report_valid, no_orphaned_references"
+      }
+    ]
+  }
+}

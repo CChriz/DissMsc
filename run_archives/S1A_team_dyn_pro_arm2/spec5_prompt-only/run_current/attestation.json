@@ -1,0 +1,88 @@
+{
+  "verdict": "PASS",
+  "overall_score": "PASS with 1 minor observation",
+  "verification_date": "2026-08-10T08:31:00+01:00",
+  "verifiers": {
+    "verifier1": {
+      "role": "configuration test engineer",
+      "scope": "逐项校验、边界值分析、类型强制转换矩阵、错误消息格式、get_schema/validate_value 单元验证",
+      "summary": "全部 10 个 key 的 schema、类型强制转换、验证规则、优先级级联均正确符合 spec。发现 1 个 minor issue：non_empty_string 错误消息格式不完整。"
+    },
+    "verifier2": {
+      "role": "configuration QA engineer",
+      "scope": "跨源集成测试、环境模拟、边界集成场景、回归检查",
+      "summary": "跨源混合场景 7/7、环境模拟 7/7、边界集成 5/5、回归检查 4/4 全部 PASS。发现与 verifier1 一致的 1 个 minor issue。"
+    }
+  },
+  "verification_details": {
+    "schema_correctness": {
+      "status": "PASS",
+      "keys_verified": 10,
+      "details": "host, port, log_level, request_timeout, max_connections, debug_mode, static_dir, cors_origins, keep_alive_timeout, ssl_enabled — 所有 key 的 type、default、env_var、validation 与 spec/spec.md 完全一致"
+    },
+    "type_coercion": {
+      "status": "PASS",
+      "int_coercion": "PASS — bool 守卫正确拒绝、int 原样保留、float 整数部分保留非整数拒绝、str parseable 转换 unparseable 拒绝、其他类型拒绝",
+      "float_coercion": "PASS — bool 守卫拒绝、int 和 float 正确转换、str parseable 转换 unparseable 拒绝、其他类型拒绝",
+      "bool_coercion": "PASS — bool 原样保留、int 0/1 转换并拒绝其他、str true/false/1/0/yes/no/on/off 大小写不敏感全支持、其他 str 拒绝、其他类型拒绝",
+      "enum_coercion": "PASS — 先 str() 强制转换，再与 allowed 列表比较（大小写敏感）",
+      "string_coercion": "PASS — str() 转换后原样使用"
+    },
+    "validation_rules": {
+      "status": "PASS",
+      "non_empty_string": "PASS — host 和 static_dir 正确检查 isinstance str 且非空",
+      "int_range": "PASS — port [2048,49151]、request_timeout [1,3600]、max_connections [1,1000]、keep_alive_timeout [1,300] 均为 inclusive 检查",
+      "enum": "PASS — log_level 仅接受 ['INFO','WARN','ERROR']，大小写敏感",
+      "bool": "PASS — debug_mode 和 ssl_enabled 在强制转换后无需额外验证",
+      "string_any": "PASS — cors_origins 接受任意字符串"
+    },
+    "priority_cascade": {
+      "status": "PASS",
+      "order": "CLI args > environment variables > config file > built-in defaults",
+      "verification": "实现按 defaults → config_file → env_vars → cli_args 顺序叠加，后加载的源覆盖先加载的源，最终 CLI 拥有最高优先级",
+      "empty_string_handling": "PASS — 使用 'is not None' 检查而非 falsy 检查，空字符串可被高优先级非 None 值正确覆盖",
+      "json_null_handling": "PASS — JSON null 值被 'is not None' 检查正确跳过",
+      "unknown_keys": "PASS — config_file 和 cli_args 中未知 key 被 'if key in _SCHEMA' 正确忽略"
+    },
+    "api_contract": {
+      "status": "PASS",
+      "ConfigValidationError": "PASS — 继承 ValueError，含 docstring",
+      "load_config": "PASS — 签名 load_config(config_file=None, env_vars=None, cli_args=None) 匹配 spec，FileNotFoundError 和 ConfigValidationError 正确抛出",
+      "get_schema": "PASS — 返回 _SCHEMA 的深拷贝",
+      "validate_value": "PASS — 接受 key 和 value，返回强制转换后的值，未知 key 原样返回"
+    },
+    "env_var_mapping": {
+      "status": "PASS",
+      "mappings": "WEB_HOST→host, WEB_PORT→port, WEB_LOG_LEVEL→log_level, WEB_REQUEST_TIMEOUT→request_timeout, WEB_MAX_CONNECTIONS→max_connections, WEB_DEBUG→debug_mode, WEB_STATIC_DIR→static_dir, WEB_CORS_ORIGINS→cors_origins, WEB_KEEP_ALIVE_TIMEOUT→keep_alive_timeout, WEB_SSL_ENABLED→ssl_enabled — 全部 10 对映射正确"
+    },
+    "integration_testing": {
+      "status": "PASS",
+      "cross_source_mixed": "7/7 PASS — CLI 覆盖 env、env 覆盖 file、file 覆盖 default、空字符串被覆盖、空字符串无覆盖触发验证错误、部分 key 分布多源、CLI None 不覆盖",
+      "environment_simulation": "7/7 PASS — 所有源缺失→纯默认、仅 config_file、仅 env_vars(dict)、env_vars 空 dict→纯默认、env_vars=None→os.environ、仅 CLI、cli_args={} vs None 等价",
+      "boundary_integration": "5/5 PASS — FileNotFoundError、file 未知 key 忽略、CLI 未知 key 忽略、JSON 格式错误、env str 与 file int 跨源类型一致性",
+      "regression": "4/4 PASS — _SCHEMA 含全部 10 key、get_schema() 深拷贝、所有 key 在返回 dict 中存在、_ENV_TO_KEY 映射正确"
+    },
+    "error_message_format": {
+      "status": "6/7 PASS — 1 minor observation",
+      "int_coercion_msg": "PASS — \"Key '<key>': cannot coerce '<value>' to int\" 包含 key 和 invalid value",
+      "float_coercion_msg": "PASS — \"Key '<key>': cannot coerce '<value>' to float\" 包含 key 和 invalid value",
+      "bool_coercion_msg": "PASS — \"Key '<key>': cannot coerce '<value>' to bool\" 包含 key 和 invalid value",
+      "int_range_msg": "PASS — \"Key '<key>': value <value> not in range [<min>, <max>]\" 包含 key 和 invalid value",
+      "enum_msg": "PASS — \"Key '<key>': value '<coerced>' not in [<allowed>]\" 包含 key 和 invalid value",
+      "non_empty_string_msg": "OBSERVATION — \"Key '<key>': value must be a non-empty string\" 包含 key 名但未包含 invalid value。Spec 要求 'must include the key name and the invalid value'。建议改为 \"Key '<key>': value '<coerced>' is not a non-empty string\""
+    }
+  },
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "error_message_format",
+      "description": "non_empty_string 验证失败的错误消息缺少 invalid value",
+      "location": "config_system.py 第 300-302 行",
+      "current": "\"Key '<key>': value must be a non-empty string\"",
+      "expected": "包含 invalid value，例如 \"Key '<key>': value '<coerced>' is not a non-empty string\"",
+      "spec_reference": "spec/spec.md 第 60-61 行：'The error must include the key name and the invalid value.'",
+      "impact": "低 — 消息仍具描述性，仅严格合规性上略有不符"
+    }
+  ],
+  "conclusion": "实现 config_system.py 在所有关键维度上均正确符合 spec/spec.md 的完整规格。Schema 定义、类型强制转换、验证规则、优先级级联、API 契约、环境变量映射、跨源集成行为全部 PASS。仅有 1 个 minor observation：non_empty_string 错误消息格式未包含 invalid value，不符合 spec 的完整消息格式要求，但不影响功能正确性。建议在后续迭代中修复。"
+}

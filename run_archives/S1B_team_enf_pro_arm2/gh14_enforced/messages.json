@@ -1,0 +1,80 @@
+{
+  "messages": [
+    {
+      "order": 0,
+      "from": "cpool1",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 2,
+      "send_seq": 2849,
+      "send_ts": 1787520975.553345,
+      "content": "【实现计划】修复 pipeline.py 中阶段失败被静默吞掉的 bug（planner1 → executor1）\n\n## 背景\nEtlPipeline 链式执行 extract → transform → load 三个阶段。pipeline.py 中存在一个 bug：阶段 1（extract）的失败被静默吞掉，导致 POISON_PILL 等坏数据不抛错，而是\"安静地\"流经后续阶段。\n\n## 根因\n- `_run_group()` 捕获异常后，把错误存成 error sentinel dict（形如 `{\"status\": \"error\", \"reason\": ...}`），而不是重新抛出。\n- `_chain_groups()` 无条件把上一阶段结果传给下一阶段，没有检查这些 error dict，导致错误被静默吞掉。\n\n## 修复方案（仅修改 pipeline.py）\n1. 确认或新增 `StageError` 异常类。若 pipeline.py 中尚不存在，请新增：`class StageError(Exception): pass`（可附带阶段上下文信息）。\n2. 新增 `_check_results(results, stage_name)` 辅助函数：检查结果列表中的 error dict，若发现任何 `status == \"error\"` 的结果则立即抛出 `StageError`，错误信息必须包含阶段名、失败数量与具体 reason。\n3. 修改 `_chain_groups()`：在每个 `_run_group` 调用之后立即调用 `_check_results`，实现 fail-fast——extract 一旦失败就不再执行 transform/load。\n\n参考代码（来自 spec，请以此为核心）：\n```python\ndef _check_results(results, stage_name):\n    errors = [r for r in results if r.get(\"status\") == \"error\"]\n    if errors:\n        reasons = \"; \".join(r.get(\"reason\", \"unknown\") for r in errors)\n        raise StageError(f\"Stage '{stage_name}' had {len(errors)} failure(s): {reasons}\")\n\ndef _chain_groups(items):\n    stage1_results = _run_group(extract_item, items)\n    _check_results(stage1_results, \"extract\")\n    stage2_results = _run_group(transform_item, stage1_results)\n    _check_results(stage2_results, \"transform\")\n    stage3_results = _run_group(load_item, stage2_results)\n    _check_results(stage3_results, \"load\")\n    return stage3_results\n```\n\n## 错误契约（实现时注意）\n- 只把 `status == \"error\"` 的 dict 判为失败；正常结果 dict 不受影响。\n- reason 缺失时回退为 \"unknown\"，避免 KeyError。\n- 采用 fail-fast 语义：某阶段一旦有错误立刻抛出，不执行后续阶段，避免级联失败与二次错误污染。\n\n## 验收标准（实现后自测）\n1. `pipeline.run([\"POISON_PILL\"])` 抛出 `StageError`（或其子类）\n2. `pipeline.run([\"POISON_PILL\", \"item_1\"])` 抛出 `StageError`\n3. `pipeline.run([\"item_0\", \"item_1\", ...])`（无错误项）返回全部 ok 的结果\n4. `pytest test_pipeline.py -v` 全部通过\n\n## 硬性约束\n- 只允许修改 `/srv/jwteam_clone/shared/run_current/workspace/pipeline.py`\n- 严禁修改 `tasks.py` 和 `test_pipeline.py`\n- 所有文件操作限定在 `/srv/jwteam_clone/shared/run_current` 内\n\n## 完成后\n- 运行 `pytest test_pipeline.py -v` 确认全绿\n- 通过 send_message 通知 verifier1 验收，然后输出 DONE",
+      "content_len": 2094
+    },
+    {
+      "order": 1,
+      "from": "cpool2",
+      "to": "planner1",
+      "broadcast": false,
+      "recipients": [
+        "planner1"
+      ],
+      "delivered": true,
+      "from_turn": 3,
+      "send_seq": 3694,
+      "send_ts": 1787520994.954952,
+      "content": "看到你已认领 plan 任务，我从「阶段依赖建模 + 失败传播策略」角度补充几个要点，供你写实现计划时参考（无需回执，若与你的方案一致忽略即可）：\n\n1. 传播语义：采用 fail-fast —— `_chain_groups` 里每个 `_run_group` 之后立即检查，一旦发现任一 error dict 就 raise，绝不让 error 结果流入下一阶段（这正是 spec 里 `POISON_PILL` 静默穿过 stage 2/3 的根因）。\n\n2. 检查点位置：extract/transform/load 三段各设一个检查点（用 `_check_results`），保证任何阶段失败都能在边界被拦截，而不是只在最后统一检查。\n\n3. 混合批次必须整体失败：`[\"POISON_PILL\", \"item_1\"]` 这类「部分成功」场景要 raise `StageError`，不能返回部分成功结果——`_check_results` 应聚合所有 error dict 的 reason 并计入失败数量。\n\n4. 错误可见性：`StageError` 消息要携带阶段名（stage_name）与失败原因列表（reasons），让下游能定位是哪个阶段、哪类毒消息（POISON_PILL）导致的失败。\n\n5. 边界约束：只改 `pipeline.py`（`_run_group` / `_chain_groups` / 新增 `_check_results` 与 `StageError` 定义），不碰 `tasks.py` 和 `test_pipeline.py`。\n\n祝你计划顺利，完成后直接投递给 executor1。",
+      "content_len": 719
+    },
+    {
+      "order": 2,
+      "from": "cpool1",
+      "to": "planner2",
+      "broadcast": false,
+      "recipients": [
+        "planner2"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 4588,
+      "send_ts": 1787521007.17245,
+      "content": "收到，5 点补充与我的方案完全一致：fail-fast 传播、extract/transform/load 三段各设 `_check_results` 检查点、混合批次（含 POISON_PILL 与正常 item）整体 raise `StageError`、错误消息携带 stage_name + reasons、只改 pipeline.py。实现计划已投递给 executor1 并标记 #plan 完成，无需再补充。",
+      "content_len": 211
+    },
+    {
+      "order": 3,
+      "from": "cpool1",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 10,
+      "send_seq": 5353,
+      "send_ts": 1787521150.644172,
+      "content": "收到同步，明白。计划由 executor2 执行实现即可，内容无需调整；实现完成后由 executor 通知 verifier1 验收。我这边无其他待办，不重复动作。",
+      "content_len": 83
+    },
+    {
+      "order": 4,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 19,
+      "send_seq": 28177,
+      "send_ts": 1787521333.921097,
+      "content": "本轮任务（GH14: Pipeline Failure Propagation）已全部完成，最终验收结论为 PASS。\n\n成果摘要：\n- planner1 产出实现计划并定向投递给 executor1。\n- executor1 在 /srv/jwteam_clone/shared/run_current/workspace 修复 pipeline.py（新增 _check_results，在 extract/transform/load 每个 stage 后检查 error 哨兵并 fail-fast 抛出 StageError）。\n- verifier1 对照 spec/spec.md 全量验收并写入 attestation.json，verdict=pass；verifier2 独立交叉复核一致（4/4）。\n- 验收覆盖 4 条 AC 全部 pass；边界约束（仅修改 pipeline.py，未改 tasks.py/test_pipeline.py）通过。\n- pytest test_pipeline.py -v：4 passed。\n\n团队进入待命状态，等待新的任务指令。",
+      "content_len": 495
+    }
+  ]
+}

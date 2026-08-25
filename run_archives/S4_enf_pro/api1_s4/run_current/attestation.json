@@ -1,0 +1,106 @@
+{
+  "verifier": "verifier1",
+  "timestamp": "2026-08-09T09:39:45+01:00",
+  "overall_verdict": "PASS",
+  "tests_summary": {
+    "total": 11,
+    "passed": 11,
+    "failed": 0,
+    "errors": 0
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "description": "GET /v1/users/<int:uid> (id=1) returns 200 with full_name field (not display_name)",
+      "verdict": "PASS",
+      "test": "tests/test_v1_compat.py::TestV1Shims::test_e1_v1_uses_old_field_name",
+      "code_review": "E1 shim at /v1/users/<int:uid> correctly calls v2_get_user, renames display_name -> full_name via data.pop()",
+      "notes": "实现与 spec 一致：第87-92行"
+    },
+    {
+      "id": "AC-2",
+      "description": "GET /v1/users/<int:uid>/preferences (id=1) returns 200 with flat v1 shape",
+      "verdict": "PASS",
+      "test": "tests/test_v1_compat.py::TestV1Shims::test_e2_v1_flat_response",
+      "code_review": "E2 shim at /v1/users/<int:uid>/preferences correctly calls v2_get_preferences, extracts data['preferences'] to flatten",
+      "notes": "实现与 spec 一致：第96-101行"
+    },
+    {
+      "id": "AC-3",
+      "description": "GET /v1/users/search (no params) returns 200 (shim supplies default)",
+      "verdict": "PASS",
+      "test": "tests/test_v1_compat.py::TestV1Shims::test_e3_v1_no_param_required",
+      "code_review": "E3 shim at /v1/users/search correctly supplies default page=1 when page param absent",
+      "notes": "实现与 spec 一致：第105-113行"
+    },
+    {
+      "id": "AC-4",
+      "description": "GET /v1/users/<int:uid>/tokens (id=1) returns 404 (no shim exists)",
+      "verdict": "PASS",
+      "test": "tests/test_v1_compat.py::TestV1Shims::test_e4_no_v1_shim",
+      "code_review": "No /v1/users/<int:uid>/tokens route defined — Flask auto-returns 404. Security fix correctly enforced.",
+      "notes": "实现与 spec 一致：第116-117行注释确认故意不加 shim"
+    },
+    {
+      "id": "AC-5",
+      "description": "GET /v1/users/legacy_export returns 404 (stale shim removed)",
+      "verdict": "PASS",
+      "test": "tests/test_v1_compat.py::TestV1Shims::test_e5_stale_shim_removed",
+      "code_review": "v1_legacy_export route function has been completely deleted from app.py",
+      "notes": "实现与 spec 一致：第120行注释说明已移除"
+    },
+    {
+      "id": "AC-6",
+      "description": "All v2 endpoints still return correct responses (regression check)",
+      "verdict": "PASS",
+      "tests": [
+        "tests/test_v2_endpoints.py::TestV2Endpoints::test_e1_v2_uses_new_field",
+        "tests/test_v2_endpoints.py::TestV2Endpoints::test_e2_v2_nested_response",
+        "tests/test_v2_endpoints.py::TestV2Endpoints::test_e3_v2_requires_param",
+        "tests/test_v2_endpoints.py::TestV2Endpoints::test_e3_v2_with_param",
+        "tests/test_v2_endpoints.py::TestV2Endpoints::test_e4_v2_requires_auth",
+        "tests/test_v2_endpoints.py::TestV2Endpoints::test_e4_v2_with_auth"
+      ],
+      "code_review": "All v2 endpoints on lines 36-79 remain untouched — no regression risk",
+      "notes": "全部 6 项 v2 回归测试通过"
+    },
+    {
+      "id": "AC-7",
+      "description": "All tests in tests/ pass",
+      "verdict": "PASS",
+      "detail": "11/11 tests passed (5 v1 compat + 6 v2 regression)"
+    }
+  ],
+  "implementation_review": {
+    "endpoint_E1": {
+      "action": "ADD shim",
+      "route": "/v1/users/<int:uid>",
+      "status": "CORRECT",
+      "detail": "Calls v2_get_user, renames display_name -> full_name"
+    },
+    "endpoint_E2": {
+      "action": "ADD shim",
+      "route": "/v1/users/<int:uid>/preferences",
+      "status": "CORRECT",
+      "detail": "Calls v2_get_preferences, flattens nested 'preferences' key"
+    },
+    "endpoint_E3": {
+      "action": "ADD shim",
+      "route": "/v1/users/search",
+      "status": "CORRECT",
+      "detail": "Supplies default page=1 when absent"
+    },
+    "endpoint_E4": {
+      "action": "NO shim",
+      "route": "(none for v1)",
+      "status": "CORRECT",
+      "detail": "No v1 route created — 404 response, security fix preserved"
+    },
+    "endpoint_E5": {
+      "action": "REMOVE shim",
+      "route": "/v1/users/legacy_export",
+      "status": "CORRECT",
+      "detail": "Route function deleted — 404 response"
+    }
+  }
+}

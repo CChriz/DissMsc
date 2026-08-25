@@ -1,0 +1,121 @@
+{
+  "verdict": "PASS",
+  "verified_by": "fullstack1",
+  "timestamp": "2026-08-10T04:39:00+01:00",
+  "spec": "/srv/jwteam_clone/shared/run_current/spec/spec.md",
+  "test_results": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "duration_seconds": 0.06,
+    "runner": "pytest",
+    "details": [
+      "tests/test_imports.py::TestNoCircularImports::test_models_helpers_no_api_import PASSED",
+      "tests/test_imports.py::TestNoCircularImports::test_models_imports_successfully PASSED",
+      "tests/test_imports.py::TestNoCircularImports::test_dependency_graph_acyclic PASSED",
+      "tests/test_imports.py::TestMovedFunction::test_worker_imports_from_utils PASSED",
+      "tests/test_imports.py::TestMovedFunction::test_worker_task_runs PASSED",
+      "tests/test_versions.py::TestVersionPins::test_utils_core_pin_not_stale PASSED",
+      "tests/test_versions.py::TestVersionPins::test_all_versions_satisfiable PASSED"
+    ]
+  },
+  "requirements": [
+    {
+      "id": 1,
+      "description": "循环依赖已解除 — models 不再 import from api",
+      "status": "PASS",
+      "evidence": "models/helpers.py: from utils.formatters import format_response (原为 from api.formatters import format_response)。api/formatters.py 改为 re-export via from utils.formatters import format_response。api/setup.cfg 新增 utils>=1.2 显式声明 re-export 隐式依赖。依赖链变更为 models→utils→core，打破 models→api→core→models 环路。"
+    },
+    {
+      "id": 2,
+      "description": "版本锁已更新 — utils 不再 pin core==1.0",
+      "status": "PASS",
+      "evidence": "utils/setup.cfg: install_requires 从 core==1.0 改为 core>=1.2，匹配 utils 实际使用的 core.BaseProcessor（v1.2 新增）。utils 自身版本同步升级至 1.2.0（format_response 归属 utils）。"
+    },
+    {
+      "id": 3,
+      "description": "函数引用已迁移 — worker import process_item from utils",
+      "status": "PASS",
+      "evidence": "worker/tasks.py: from utils.processing import process_item (原为 from core.processing import process_item)。process_item 在 core v1.2 已迁移至 utils.processing，worker 引用已同步更新。"
+    },
+    {
+      "id": 4,
+      "description": "无包存在循环依赖",
+      "status": "PASS",
+      "evidence": "test_dependency_graph_acyclic: DFS 检测 core/models/api/worker/utils 五包依赖图，无环路。修复后依赖关系：core(无外部依赖)、models→utils+core、api→core+models+utils、worker→core+utils、utils→core。单向无环 DAG。"
+    },
+    {
+      "id": 5,
+      "description": "所有版本约束可同时满足",
+      "status": "PASS",
+      "evidence": "test_all_versions_satisfiable: 验证全部 setup.cfg 约束 — core>=1.2(utils), core>=1.0(models), core>=1.0+models>=1.0+utils>=1.2(api), core>=1.0(worker)。core=1.2.0 ≥ 所有 >= 下限；models=1.1.0 ≥ 1.0；utils=1.2.0 ≥ 1.2(满足api约束)。全仓库无冲突。"
+    },
+    {
+      "id": 6,
+      "description": "tests/ 下所有测试通过",
+      "status": "PASS",
+      "evidence": "pytest tests/ -v: 7 passed, 0 failed in 0.06s。二次运行（含补充变更后）结果一致。覆盖导入合法性、循环检测、函数迁移、版本约束、运行时执行。"
+    }
+  ],
+  "changed_files": [
+    {
+      "path": "models/helpers.py",
+      "change": "from api.formatters import format_response → from utils.formatters import format_response",
+      "bug": 1,
+      "executor": "executor3"
+    },
+    {
+      "path": "api/formatters.py",
+      "change": "删除本地 format_response() 定义，改为 re-export: from utils.formatters import format_response; 保留 format_error",
+      "bug": 1,
+      "executor": "executor3"
+    },
+    {
+      "path": "api/setup.cfg",
+      "change": "新增 install_requires: utils>=1.2（re-export 隐式依赖显式化）",
+      "bug": 1,
+      "executor": "executor3",
+      "reviewed_by": "planner2"
+    },
+    {
+      "path": "worker/tasks.py",
+      "change": "from core.processing import process_item → from utils.processing import process_item",
+      "bug": 3,
+      "executor": "executor3"
+    },
+    {
+      "path": "utils/setup.cfg",
+      "change": "core==1.0 → core>=1.2; version 1.1.0 → 1.2.0",
+      "bug": 2,
+      "executor": "executor2"
+    },
+    {
+      "path": "utils/setup.cfg (version)",
+      "change": "version 1.1.0 → 1.2.0（format_response 归属 utils，版本号与功能增量对齐）",
+      "bug": 2,
+      "executor": "executor3",
+      "reviewed_by": "planner2"
+    }
+  ],
+  "constraint_compatibility_matrix": {
+    "core@1.2.0": {
+      "required_by": {"utils": ">=1.2", "models": ">=1.0", "api": ">=1.0", "worker": ">=1.0"},
+      "satisfied": true
+    },
+    "models@1.1.0": {
+      "required_by": {"api": ">=1.0"},
+      "satisfied": true
+    },
+    "utils@1.2.0": {
+      "required_by": {"api": ">=1.2"},
+      "satisfied": true
+    }
+  },
+  "dependency_graph_after_fix": {
+    "core": [],
+    "models": ["core", "utils"],
+    "api": ["core", "models", "utils"],
+    "worker": ["core", "utils"],
+    "utils": ["core"]
+  }
+}

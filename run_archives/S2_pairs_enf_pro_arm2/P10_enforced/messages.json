@@ -1,0 +1,94 @@
+{
+  "messages": [
+    {
+      "order": 0,
+      "from": "cpool2",
+      "to": "executor3",
+      "broadcast": false,
+      "recipients": [
+        "executor3"
+      ],
+      "delivered": true,
+      "from_turn": 2,
+      "send_seq": 4716,
+      "send_ts": 1787503793.530058,
+      "content": "【test9 实现计划 — 请严格按此执行】来自 planner2（API contract analyst）\n\n## 0. 任务来源与你的职责边界\n- 本计划来自 spec.md 的 Subtask 1（test9: Mock-Based API Testing）。\n- 你的任务：在 `/srv/jwteam_clone/shared/run_current/workspace` 下，修复 `service.py` 的错误处理，并编写 `test_service.py`，最终 `python -m pytest test_service.py -v` 必须 0 failures。\n- 你只能依据本计划 + `/srv/jwteam_clone/shared/run_current/brief.md`（+ workspace 内的实际文件）。不得阅读 spec.md 全文。\n- 完成后 send_message(to_member_name='verifier2', ...) 通知 verifier2，然后输出 DONE。\n\n## 1. 硬性需求清单（验收依据，逐条核对）\n1. 用 mock 覆盖 `service.py` 中的 3 个 API 调用：\n   - `get_user(user_id)` → user API，返回 user dict\n   - `get_weather(city)` → weather API，返回 weather dict\n   - `send_notification(user_id, message)` → notification API，返回 status\n2. 测试文件 `test_service.py`，使用 `unittest.mock`（标准库，优先；`pytest-mock` 可选，但 `unittest.mock.patch` 零依赖更稳）。\n3. 为 `get_user` 和 `get_weather` mock 成功响应。\n4. 为 `send_notification` mock 网络超时，验证 app 优雅处理（返回 error dict，不 crash）。\n5. 每个 API 的测试必须断言三点：正确的 URL/endpoint 被调用、正确的参数被传递、返回值匹配预期 shape。\n6. 修复 `service.py` 中 `send_notification` 缺失的 timeout try/except。\n7. `python -m pytest test_service.py -v` 0 failures。\n8. 测试函数总数 ≥ 8。\n\n## 2. 关键先验：先读 workspace 里的实际 service.py\n我（planner）无法读 workspace 文件，以下 URL、BASE_URL、字段名均为**合理推断**。你第一步必须打开 `/srv/jwteam_clone/shared/run_current/workspace/service.py`，确认：\n- 用的是 `requests` 还是 `urllib`/`http.client`（以下假设 `requests`；若不同，mock 目标相应改为 `urllib.request.urlopen` 等）。\n- `BASE_URL` 常量、三个函数实际拼接的 endpoint 路径与参数传递方式（URL 路径 vs query params vs JSON body）。\n- 三个函数成功时的真实返回结构（字段名/嵌套），这决定 mock 的 `json.return_value` 与断言。\n**原则：测试断言必须与真实 service.py 的行为一致，不要臆造字段名。若 service.py 结构与下方推断不符，以实际代码为准调整，但不得改变 spec 要求的语义（URL/参数/shape 三类断言、超时处理）。**\n\n## 3. service.py 修复方案（只改 send_notification，保持 get_user/get_weather 成功路径不动）\n假设 `send_notification` 现状大致为：\n```python\ndef send_notification(user_id, message):\n    response = requests.post(f\"{BASE_URL}/notifications\", json={\"user_id\": user_id, \"message\": message})\n    return response.json()\n```\n修复为（核心：捕获 `requests.exceptions.Timeout`，返回 error dict，不 crash；建议加 timeout 参数使超时可控）：\n```python\nimport requests\n\ndef send_notification(user_id, message):\n    try:\n        response = requests.post(\n            f\"{BASE_URL}/notifications\",\n            json={\"user_id\": user_id, \"message\": message},\n            timeout=5,          # 若原代码无 timeout，加上；真实网络调用需要可超时\n        )\n        return response.json()  # 成功路径保持原样，不要改变返回 shape\n    except requests.exceptions.Timeout:\n        # 优雅降级：返回 error dict，形状稳定，便于断言\n        return {\"error\": \"timeout\", \"status\": \"failed\"}\n```\n要点：\n- 只捕获 `Timeout`（含 ConnectTimeout/ReadTimeout 子类），符合 spec「timeout errors」要求；不要用裸 `except Exception`（会掩盖 bug）。\n- 成功路径的返回值结构**保持与现状一致**（若现状返回 `response.json()`，就保持；若现状额外解析字段，也保持）。仅新增异常分支。\n- error dict 的字段名（`error`/`status`）如果 service.py 里已有约定俗成的错误形状，沿用；否则用上面的 `{\"error\": \"timeout\", \"status\": \"failed\"}`，并让测试断言与之完全一致。\n- 若 service.py 顶层是 `import requests`，测试 patch 目标用 `service.requests.post/get`（patch 使用点，不是定义点）。\n\n## 4. test_service.py 测试设计（10 个函数，满足 ≥8）\n统一用 `unittest.mock.patch` + `Mock`：\n```python\nfrom unittest.mock import patch, Mock\nimport requests\nimport service\n```\nMock 成功响应的通用写法：\n```python\nmock_resp = Mock()\nmock_resp.json.return_value = { ... 与 service 真实返回一致的 dict ... }\nmock_get.return_value = mock_resp\n```\n\n### get_user（3 个测试，覆盖 URL + 参数 + shape）\n假设 URL 为 `f\"{BASE_URL}/users/{user_id}\"`，成功返回 `{\"id\": <int>, \"name\": <str>}`（以实际为准）。\n1. `test_get_user_calls_correct_url`\n   - patch `service.requests.get`\n   - 调用 `service.get_user(1)`\n   - 断言：`mock_get.call_args[0][0]` 的 endpoint 路径正确（含 `/users/` 与 user_id）；返回 dict 匹配预期 shape（`result[\"id\"]==1` 等）。\n2. `test_get_user_passes_user_id_param`\n   - 断言 user_id 以正确方式传入（若在 URL 路径，断言 URL 以 `/users/1` 结尾；若在 params，断言 `call_args.kwargs[\"params\"]`）。\n3. `test_get_user_returns_expected_shape`\n   - 断言返回值是 dict 且 key 集合/类型符合预期。\n\n### get_weather（3 个测试）\n假设 URL 为 `f\"{BASE_URL}/weather\"`，`city` 通过 `params={\"city\": city}` 传递，成功返回 weather dict（如 `{\"city\":..., \"temperature\":...}`，以实际为准）。\n4. `test_get_weather_calls_correct_url` — 断言 endpoint 路径 `/weather` 正确 + 返回值 shape。\n5. `test_get_weather_passes_city_param` — 断言 `mock_get.call_args.kwargs[\"params\"]` 含正确的 city。\n6. `test_get_weather_returns_expected_shape` — 断言返回 dict 字段/类型。\n\n### send_notification（4 个测试，覆盖成功 + 超时 + URL + 参数 + shape）\n假设 URL 为 `f\"{BASE_URL}/notifications\"`，payload 为 `json={\"user_id\":..., \"message\":...}`，成功返回 status dict（如 `{\"status\": \"sent\"}`，以实际为准）。\n7. `test_send_notification_calls_correct_url` — patch `service.requests.post`，断言 endpoint `/notifications` 正确。\n8. `test_send_notification_passes_payload` — 断言 `mock_post.call_args.kwargs[\"json\"]` 含正确的 `user_id` 与 `message`。\n9. `test_send_notification_returns_expected_shape_on_success` — mock 成功响应，断言返回 status dict 匹配预期。\n10. `test_send_notification_handles_timeout_gracefully`\n    - `mock_post.side_effect = requests.exceptions.Timeout(\"timed out\")`\n    - 调用 `service.send_notification(1, \"hello\")`\n    - 断言：返回的是 error dict（`{\"error\": \"timeout\", \"status\": \"failed\"}`，与 service.py 修复后的错误形状完全一致）；不抛异常（即函数正常返回）。\n    - 关键点：用 `side_effect` 抛异常而非 `return_value`，才能真正走到 try/except 分支。\n\n> 上述 10 个函数为最低基线。若想更稳，可再补：get_user/get_weather 的超时或非 200 场景（可选，非必需），但务必保证每个 API 的 URL/参数/shape 三类断言都齐备（Hard Requirement 5）。\n\n## 5. 自检清单（提交前逐条确认）\n- [ ] `service.py`：`send_notification` 已加 try/except，捕获 `requests.exceptions.Timeout`，返回 error dict；get_user/get_weather 成功路径未被改动。\n- [ ] `test_service.py`：≥8 个测试函数，全部用 mock，无真实网络调用（测试内不得出现真实 `requests.get/post` 发起）。\n- [ ] 三个 API 各自覆盖 URL/endpoint、参数、返回 shape 三类断言。\n- [ ] 超时场景用 `side_effect = requests.exceptions.Timeout` 模拟，并断言 error dict + 不 crash。\n- [ ] 本地运行 `python -m pytest test_service.py -v` 输出 0 failed、无 error。\n- [ ] 测试 patch 目标使用 `service.requests.get/post`（使用点），而非 `requests.get`。\n\n## 6. 交付物\n- `/srv/jwteam_clone/shared/run_current/workspace/service.py`（修复后）\n- `/srv/jwteam_clone/shared/run_current/workspace/test_service.py`（mock 测试）\n\n完成后：`send_message(to_member_name='verifier2', content=...)` 通知 verifier2 验收，然后输出 DONE。若发现 service.py 实际结构与上述假设差异较大（如用 urllib、字段名完全不同），以实际代码为准实现，并在通知 verifier2 时说明你依据的实际契约。",
+      "content_len": 6032
+    },
+    {
+      "order": 1,
+      "from": "cpool2",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 3,
+      "send_seq": 4823,
+      "send_ts": 1787503801.396336,
+      "content": "已完成 plan_test9 规划任务。已阅读 spec.md 的 Subtask 1（test9: Mock-Based API Testing），产出完整实现计划并定向送达 executor3。\n\n计划要点：\n1. 修复 service.py：为 send_notification 补充 try/except，捕获 requests.exceptions.Timeout 并返回稳定 error dict（建议 {\"error\":\"timeout\",\"status\":\"failed\"}），不改变 get_user/get_weather 成功路径。\n2. 编写 test_service.py：使用 unittest.mock.patch 全 mock 覆盖 3 个 API，共 10 个测试函数（≥8 达标），每个 API 均覆盖 URL/endpoint、参数传递、返回 shape 三类断言；send_notification 用 side_effect 模拟超时并断言不 crash。\n3. 交付物为 workspace 下修复后的 service.py 与 test_service.py，验收标准：python -m pytest test_service.py -v 0 failures。\n\n已在计划中明确提醒 executor3 以实际 service.py 为准调整推断（URL/BASE_URL/字段名），并按要求完成后通知 verifier2。任务已标记 completed。",
+      "content_len": 654
+    },
+    {
+      "order": 2,
+      "from": "cpool1",
+      "to": "fullstack1",
+      "broadcast": false,
+      "recipients": [
+        "fullstack1"
+      ],
+      "delivered": true,
+      "from_turn": 2,
+      "send_seq": 11183,
+      "send_ts": 1787503854.768601,
+      "content": "Hi fullstack1，看到你认领了 plan_ir2。这里有一个协调关系需要对齐，避免重复劳动：\n\n1. impl_ir2 的任务描述里明确写的是：executor1 严格遵循「来自 planner1 的计划消息」。也就是说 executor1 在等的是我（planner1）定向送达的计划。\n2. ir2（离线检索 + 跨源交叉验证 + 规避 doc_trap.txt 陷阱文档）恰好是我的 source-verification 领域。\n\n建议分工（方案 A，推荐）：由我（planner1）产出完整 ir2 计划并定向送达 executor1；你收到本条消息确认后，把 plan_ir2 标记 completed 以解锁 impl_ir2（当前只有你作为 claim 持有者能标记完成）。\n\n如果你已经在写计划、或更愿意自己送达，也可以走方案 B：告诉我，我把我的跨源验证/陷阱规避要点发给你整合，由你送达 executor1，避免 executor1 收到两份互相冲突的计划。\n\n请回复确认走方案 A 还是 B，我据此行动。",
+      "content_len": 469
+    },
+    {
+      "order": 3,
+      "from": "cpool1",
+      "to": "fullstack1",
+      "broadcast": false,
+      "recipients": [
+        "fullstack1"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 18815,
+      "send_ts": 1787504009.705541,
+      "content": "收到，方案 C 认可。你的结论与我的 source-verification 方法完全一致：doc_A（\"internal designation TERRA-3\"）与 doc_B（\"internal codename: TERRA-3\"）两个独立来源逐字一致 → TERRA-3 可信；doc_trap.txt 的 TERRA-13 且自标 \"Do not cite / NOT reviewed / accuracy disputed\"，排除正确。我不会重发第二份完整计划，避免冲突。\n\n唯一补一步：为了让 impl_ir2 里「来自 planner1 的计划消息」这条路由不落空（executor1 可能据此等待 planner1 的消息），我会给 executor1 发一条简短的权威确认 + 补充核对要点，内容与你已送达的计划完全一致，仅作强化、不引入任何冲突项。谢谢配合。",
+      "content_len": 392
+    },
+    {
+      "order": 4,
+      "from": "cpool1",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 18817,
+      "send_ts": 1787504009.70566,
+      "content": "executor1，你好，我是 planner1。这是 ir2 的实现计划（planner1 权威版，与 fullstack1 已送达的计划一致、不冲突，以下是完整要点 + 核对清单）。\n\n## 目标\n回答：Project Kestrel 的内部代号（internal codename）是什么？仅使用离线语料，禁止联网。\n\n## 计划结论（请你在实现时再独立核对一次）\n- answer = `TERRA-3`（保留大写与连字符，不要加引号、空格或多余标点）\n\n## 证据（恰好 2 条、来自 2 个不同文档，逐字包含 TERRA-3）\n1. `doc_A.txt`：含 \"internal designation TERRA-3\"（fullstack1 侦察为第 2 行，供参考）\n2. `doc_B.txt`：含 \"internal codename: TERRA-3\"（fullstack1 侦察为第 2 行，供参考）\n> 两个独立来源措辞不同，但 codename 逐字一致 → 跨源一致成立。\n\n## 陷阱规避（关键）\n- `doc_trap.txt` 声称 TERRA-13，且自标 \"Do not cite / NOT reviewed / accuracy disputed\"，是刻意设置的误导文档。**严禁引用 doc_trap.txt**，一旦作为 evidence 即自动判失败。\n- 只采用 doc_A.txt + doc_B.txt 两个非陷阱来源。\n\n## 交付物\n写入 `/srv/jwteam_clone/shared/run_current/workspace/answer.json`（UTF-8，合法 JSON）：\n{\n  \"answer\": \"TERRA-3\",\n  \"evidence\": [\n    {\"doc\": \"doc_A.txt\", \"lines\": [2, 2]},\n    {\"doc\": \"doc_B.txt\", \"lines\": [2, 2]}\n  ]\n}\n\n## 实现步骤\n1. 用 read_file 打开 `/srv/jwteam_clone/shared/run_current/workspace/corpus/doc_A.txt` 与 `doc_B.txt`，确认 \"TERRA-3\" 所在的**实际行号**（行号从 1 开始计）。\n2. 若实际行号与上面的 [2,2] 不符，以你实际读到的、且该行逐字完整包含 \"TERRA-3\" 的行号为准，改写 lines。\n3. 逐字核对：该行文本必须原样出现 \"TERRA-3\"（大小写、连字符完全一致）。\n4. 写入 answer.json：字段名严格为 `answer` 与 `evidence`；evidence 恰好 2 项；两个 doc 文件名不同；全程不出现 doc_trap.txt。\n5. 自检：`python -m json.tool answer.json` 可解析；evidence 长度为 2；lines 均为 [int, int]。\n6. 完成后 send_message(to_member_name='verifier1', content=...) 通知验收，然后输出 DONE。\n\n## 严禁\n- 引用 doc_trap.txt；只给 1 条证据；answer 与证据行文本不一致；lines 区间未包含 TERRA-3；文件名/字段名拼写错误。",
+      "content_len": 1449
+    },
+    {
+      "order": 5,
+      "from": "cpool1",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 6,
+      "send_seq": 25948,
+      "send_ts": 1787504112.729857,
+      "content": "executor1，收到完成汇报。从 source-verification 角度做最终核对：两条证据逐字一致——doc_A「internal designation TERRA-3」与 doc_B「internal codename: TERRA-3」，都明确把 internal codename/designation 指向 TERRA-3，与题目「internal codename」完全对应；两来源独立、措辞不同但结论一致，跨源一致成立；doc_trap.txt（TERRA-13）已正确排除。实现与计划一致，无需任何改动。验收交由 verifier1 独立进行即可。此条无需回复。",
+      "content_len": 296
+    }
+  ]
+}

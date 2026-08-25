@@ -1,0 +1,115 @@
+{
+  "attestation": {
+    "verdict": "PASS",
+    "timestamp": "2026-08-09T20:20:30+01:00",
+    "auditors": ["verifier1", "verifier2"],
+    "specification": "/srv/jwteam_clone/shared/run_current/spec/v_spec.md",
+    "workspace": "/srv/jwteam_clone/shared/run_current/workspace"
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "requirement": "Nonces must be 96-bit (12 bytes) and cryptographically random — not counter-based",
+      "verdict": "PASS",
+      "file": "crypto_service/nonce.py",
+      "evidence": {
+        "implementation": "os.urandom(12)",
+        "old_code_removed": [
+          "import struct",
+          "self._counter = 0",
+          "struct.pack('>I', self._counter % (2 ** 32))",
+          ".ljust(12, b'\\x00')"
+        ],
+        "clean_imports": "import os only",
+        "class_name_preserved": "NonceGenerator",
+        "method_signature_preserved": "generate(self) -> bytes",
+        "tests_passed": [
+          "test_nonce_is_12_bytes",
+          "test_nonces_are_not_sequential",
+          "test_nonces_pass_basic_randomness_check",
+          "test_two_generators_produce_different_nonces"
+        ],
+        "verifier1_code_audit": "PASS",
+        "verifier2_test_audit": "PASS"
+      }
+    },
+    {
+      "id": "R2",
+      "requirement": "Key derivation must use PBKDF2 with >= 100,000 iterations",
+      "verdict": "PASS",
+      "file": "crypto_service/key_derivation.py",
+      "evidence": {
+        "implementation": "hashlib.pbkdf2_hmac('sha256', ..., iterations=600000, dklen=32)",
+        "iterations_value": 600000,
+        "threshold_met": "600000 >= 100000",
+        "owasp_compliance": "Exceeds OWASP 2023 recommendation of >= 600,000 for PBKDF2-SHA256",
+        "hash_algorithm": "sha256 (unchanged)",
+        "derived_key_length": 32,
+        "function_signature_preserved": "derive_key(password: str, salt: bytes) -> bytes",
+        "tests_passed": [
+          "test_pbkdf2_iterations_sufficient",
+          "test_derived_key_is_32_bytes"
+        ],
+        "verifier1_code_audit": "PASS",
+        "verifier2_test_audit": "PASS"
+      }
+    },
+    {
+      "id": "R3",
+      "requirement": "GCM authentication tag must be full 16 bytes — no truncation",
+      "verdict": "PASS",
+      "file": "crypto_service/encryption.py",
+      "evidence": {
+        "encrypt_changes": {
+          "tag_extraction": "tag = encryptor.tag (no slicing, no tag[:8])",
+          "tag_length": 16,
+          "comment": "16-byte GCM authentication tag — never truncate"
+        },
+        "decrypt_changes": {
+          "min_tag_length": 16,
+          "finalize_method": "finalize() (was finalize_with_tag(tag))",
+          "gcm_constructor": "modes.GCM(nonce, tag, min_tag_length=16)"
+        },
+        "removed_patterns": [
+          "tag[:8]",
+          "finalize_with_tag(tag)",
+          "min_tag_length=8"
+        ],
+        "tests_passed": [
+          "test_full_16_byte_auth_tag",
+          "test_tag_type_is_bytes",
+          "test_roundtrip_basic",
+          "test_roundtrip_empty",
+          "test_different_keys_produce_different_ciphertexts"
+        ],
+        "verifier1_code_audit": "PASS",
+        "verifier2_test_audit": "PASS"
+      }
+    },
+    {
+      "id": "R4",
+      "requirement": "Salt generation using os.urandom() is already correct — do not modify it",
+      "verdict": "PASS",
+      "file": "crypto_service/utils.py",
+      "evidence": {
+        "implementation": "os.urandom(size)",
+        "unmodified": true,
+        "default_size": 16,
+        "tests_passed": [
+          "test_salt_uses_os_urandom",
+          "test_salt_default_size",
+          "test_salts_are_unique"
+        ],
+        "verifier1_code_audit": "PASS",
+        "verifier2_test_audit": "PASS"
+      }
+    }
+  ],
+  "additional_observations": {
+    "no_regressions": "No unrelated files modified; __init__.py files untouched",
+    "no_new_vulnerabilities": "No hardcoded keys, no info leaks, no deprecated primitives introduced",
+    "code_quality": "All fixes are minimal, focused changes addressing root causes",
+    "backward_compatibility": "encrypt() output format unchanged (ciphertext, tag tuple); decrypt() signature unchanged",
+    "test_coverage": "15/15 tests pass across 5 test files"
+  }
+}

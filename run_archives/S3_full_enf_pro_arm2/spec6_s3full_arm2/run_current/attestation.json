@@ -1,0 +1,193 @@
+{
+  "verifier": "verifier1",
+  "collaborator": "verifier2",
+  "timestamp": "2026-08-10T00:52:30+01:00",
+  "implementation_file": "/srv/jwteam_clone/shared/run_current/workspace/protocol.py",
+  "spec_file": "/srv/jwteam_clone/shared/run_current/spec/spec.md",
+  "overall_verdict": "PASS",
+  "summary": {
+    "MUST_passed": 12,
+    "MUST_total": 12,
+    "SHOULD_passed": 5,
+    "SHOULD_total": 5,
+    "MAY_passed": 3,
+    "MAY_total": 3,
+    "score": "1.00 = (12/12 × 0.6) + (5/5 × 0.3) + (3/3 × 0.1)"
+  },
+  "requirements": {
+    "MUST": {
+      "M1_SET_store_value": {
+        "verdict": "PASS",
+        "spec": "Accept SET <key> <value> and store the value.",
+        "evidence": "_handle_set (L99-114): key=args[0], value=' '.join(args[1:]) preserves multi-word values, stores in self._data, sets self._expiry[key]=None, returns 'OK'.",
+        "edge_cases_verified": ["multi-word values with spaces preserved", "SET overwrites existing key", "SET clears any previous SETEX expiry"]
+      },
+      "M2_GET_return_or_error": {
+        "verdict": "PASS",
+        "spec": "Accept GET <key>, return the stored value or ERR key_not_found.",
+        "evidence": "_handle_get (L116-122): calls _is_expired first (expired keys auto-cleaned), then checks key in self._data. Returns value on success, 'ERR key_not_found' on miss.",
+        "edge_cases_verified": ["expired key returns ERR key_not_found (not stale value)", "value containing spaces returned intact"]
+      },
+      "M3_DEL_remove_or_error": {
+        "verdict": "PASS",
+        "spec": "Accept DEL <key>, remove the key, return ERR key_not_found if missing.",
+        "evidence": "_handle_del (L124-137): two-phase atomic — Phase 1 verifies all keys exist (any missing → ERR key_not_found), Phase 2 deletes all. Returns 'OK <count>' per Response Format 'OK <detail>' allowance.",
+        "note": "Implementation supports multi-key DEL as an extension beyond spec (spec only defines single-key DEL). Single-key DEL returns 'OK 1' (valid OK <detail> format per spec §Response Format). M3 core contract (delete existing key; ERR on missing) is satisfied. Existing test assertion 'OK' in r is forward-compatible.",
+        "edge_cases_verified": ["non-existent key → ERR key_not_found", "expired key → ERR key_not_found", "partially-missing keys → atomic rejection of all"]
+      },
+      "M4_KEYS_list": {
+        "verdict": "PASS",
+        "spec": "Accept KEYS (no arguments), return all stored keys one per line, terminated by END.",
+        "evidence": "_handle_keys (L139-145): calls _cleanup_all_expired to remove stale keys before listing. Empty store returns just 'END'. Non-empty: keys joined by newline + '\\nEND'.",
+        "edge_cases_verified": ["empty store → 'END'", "expired keys excluded from output"]
+      },
+      "M5_COUNT_return": {
+        "verdict": "PASS",
+        "spec": "Accept COUNT (no arguments), return COUNT <n>.",
+        "evidence": "_handle_count (L147-150): calls _cleanup_all_expired, returns f'COUNT {len(self._data)}'.",
+        "edge_cases_verified": ["count excludes expired keys", "count after FLUSH → 0"]
+      },
+      "M6_EXISTS_true_false": {
+        "verdict": "PASS",
+        "spec": "Accept EXISTS <key>, return TRUE if the key exists, FALSE otherwise.",
+        "evidence": "_handle_exists (L152-156): calls _is_expired, returns 'TRUE' or 'FALSE'.",
+        "edge_cases_verified": ["expired key → FALSE (not TRUE)", "case-sensitive key matching"]
+      },
+      "M7_FLUSH_clear_all": {
+        "verdict": "PASS",
+        "spec": "Accept FLUSH (no arguments), remove all stored keys, return OK.",
+        "evidence": "_handle_flush (L158-162): clears both self._data and self._expiry dicts, returns 'OK'.",
+        "edge_cases_verified": ["FLUSH also clears expiry entries", "FLUSH on empty store → OK", "post-FLUSH KEYS → END, COUNT → 0"]
+      },
+      "M8_OK_for_SET_DEL": {
+        "verdict": "PASS",
+        "spec": "Return OK for successful SET and DEL operations.",
+        "evidence": "_handle_set returns 'OK' (L114). _handle_del returns 'OK <count>' (L137), which conforms to 'OK <detail>' in spec §Response Format.",
+        "note": "DEL response changed from 'OK' to 'OK 1' (single key) or 'OK N' (multi key) due to multi-key extension. Both are valid under the Response Format's 'OK <detail>' pattern. Existing test uses substring 'OK' in r and remains compatible."
+      },
+      "M9_unknown_command": {
+        "verdict": "PASS",
+        "spec": "Return ERR unknown_command for any unrecognized command.",
+        "evidence": "execute() (L61-79): three guard clauses — empty command (L62-63), cmd not in COMMAND_MAP (L69-71), arg count below min_parts (L74-75). All return 'ERR unknown_command'.",
+        "edge_cases_verified": ["empty string input", "unrecognized command name", "SET without value", "case-insensitive command matching"]
+      },
+      "M10_key_too_long": {
+        "verdict": "PASS",
+        "spec": "Reject keys exceeding maximum length with ERR key_too_long.",
+        "evidence": "MAX_KEY_LENGTH=64. Checked in _handle_set (L105), _handle_mset (L181), _handle_setex (L256), _handle_append (L222), _handle_rename (L296). len(key)>64 rejected, len(key)≤64 accepted.",
+        "edge_cases_verified": ["exactly 64 chars → accepted", "65 chars → rejected", "checked before value/store constraints (correct order)"]
+      },
+      "M11_value_too_large": {
+        "verdict": "PASS",
+        "spec": "Reject values exceeding maximum size with ERR value_too_large.",
+        "evidence": "MAX_VALUE_SIZE=1024. Checked in _handle_set (L107), _handle_mset (L183), _handle_setex (L258), _handle_append for new keys (L232) and post-concatenation (L227).",
+        "edge_cases_verified": ["exactly 1024 chars → accepted", "1025 chars → rejected", "APPEND concatenated overflow → original value preserved"]
+      },
+      "M12_store_full": {
+        "verdict": "PASS",
+        "spec": "Reject SET when at capacity with ERR store_full, unless key already exists (update allowed).",
+        "evidence": "MAX_KEYS=100. Checked in _handle_set (L109): len(_data)>=100 AND key not in _data → ERR store_full. Updates to existing keys always allowed.",
+        "edge_cases_verified": ["100 keys + new key → ERR store_full", "100 keys + update existing → OK", "MSET with capacity math → correct", "APPEND new key at capacity → ERR store_full"]
+      }
+    },
+    "SHOULD": {
+      "S1_MSET_atomic": {
+        "verdict": "PASS",
+        "spec": "Accept MSET <k1> <v1> <k2> <v2> ..., atomic, return OK <n>.",
+        "evidence": "_handle_mset (L166-201): two-phase atomic. Phase 1 pre-validates all pairs (key length, value size, deduplicated new-key capacity). Phase 2 commits all. Returns f'OK {len(pairs)}'.",
+        "edge_cases_verified": ["odd arg count → ERR unknown_command", "MSET a 1 a 2 b 3 → correct dedup (3 pairs, only 2 new keys for capacity)", "mid-batch constraint failure → nothing written"]
+      },
+      "S2_MGET_multi_get": {
+        "verdict": "PASS",
+        "spec": "Accept MGET <k1> <k2> ..., value or NIL per line, terminated by END.",
+        "evidence": "_handle_mget (L203-213): iterates args, returns self._data[key] or 'NIL', appends 'END'.",
+        "edge_cases_verified": ["all keys missing → NIL per line + END", "mix of present/missing keys", "expired key → NIL"]
+      },
+      "S3_TTL_time_to_live": {
+        "verdict": "PASS",
+        "spec": "Accept TTL <key>, return seconds or -1 (no expiry) or ERR key_not_found.",
+        "evidence": "_handle_ttl (L267-282): calls _is_expired, returns '-1' for no expiry, remaining int seconds for expiring keys, '0' for already-expired edge case, 'ERR key_not_found' for missing.",
+        "edge_cases_verified": ["SET key → TTL → -1", "SETEX key 10 → TTL → ≤10", "expired key → ERR key_not_found", "missing key → ERR key_not_found"]
+      },
+      "S4_SETEX_with_expiry": {
+        "verdict": "PASS",
+        "spec": "Accept SETEX <key> <seconds> <value>, set with expiration, expired keys treated as non-existent.",
+        "evidence": "_handle_setex (L243-265): validates seconds as int (ValueError → ERR unknown_command), enforces key/value/store constraints, stores expiry = time.time()+seconds. Expired keys cleaned by _is_expired in GET/DEL/EXISTS/TTL.",
+        "edge_cases_verified": ["seconds=0 → immediately expired", "SETEX with non-integer seconds → ERR unknown_command", "SET overwriting SETEX key clears expiry", "SETEX seconds negative → key immediately expired"]
+      },
+      "S5_APPEND_create_or_append": {
+        "verdict": "PASS",
+        "spec": "Accept APPEND <key> <value>, append to existing or create new, return OK <new_length>.",
+        "evidence": "_handle_append (L215-239): calls _is_expired first, appends to existing or creates new. Enforces key_too_long, value_too_large (post-concatenation), store_full (new keys only). Returns f'OK {len(result)}'.",
+        "edge_cases_verified": ["append to existing → OK + new length", "create new key → OK + length", "concat overflow → ERR value_too_large, original unchanged", "append to expired key → treats as new"]
+      }
+    },
+    "MAY": {
+      "Y1_RENAME": {
+        "verdict": "PASS",
+        "spec": "Accept RENAME <old_key> <new_key>, rename key, OK or ERR key_not_found.",
+        "evidence": "_handle_rename (L286-301): validates old_key exists, new_key length, migrates _data.pop(old_key) and _expiry.pop(old_key). Returns 'OK' or 'ERR key_not_found'.",
+        "edge_cases_verified": ["old_key not found → ERR key_not_found", "new_key too long → ERR key_too_long", "expiry preserved across rename"]
+      },
+      "Y2_TYPE": {
+        "verdict": "PASS",
+        "spec": "Accept TYPE <key>, return STRING or INTEGER, ERR key_not_found if missing.",
+        "evidence": "_handle_type (L303-315): _is_expired first, then isdigit() or negative-integer pattern match. Returns 'INTEGER' or 'STRING'.",
+        "edge_cases_verified": ["positive integer '123' → INTEGER", "negative integer '-456' → INTEGER", "leading zero '007' → INTEGER", "float '1.5' → STRING", "empty string '' → STRING"]
+      },
+      "Y3_DUMP": {
+        "verdict": "PASS",
+        "spec": "Accept DUMP (no arguments), return all key=value pairs (<key>=<value> per line), terminated by END.",
+        "evidence": "_handle_dump (L317-323): calls _cleanup_all_expired, formats k=v per line, appends 'END'. Empty store → just 'END'.",
+        "edge_cases_verified": ["expired keys excluded", "empty store → 'END'", "values containing '=' handled correctly"]
+      }
+    }
+  },
+  "cross_cutting_checks": {
+    "response_format_consistency": {
+      "verdict": "PASS",
+      "detail": "All errors use unified 'ERR <error_code>' format. All 5 error codes consistently applied: unknown_command (L63,71,75,169,253), key_not_found (L121,130,273,294,309), key_too_long (L106,182,257,223,297), value_too_large (L108,184,228,233,259), store_full (L110,194,235,261)."
+    },
+    "constraint_check_chain_order": {
+      "verdict": "PASS",
+      "detail": "Constraint checks follow declared chain: command_parse → arg_count → key_length(>64) → value_size(>1024) → store_capacity(>=100 && key not exists). Verified in _handle_set, _handle_mset, _handle_setex, _handle_append. No constraint skipped or reordered."
+    },
+    "expiry_consistency_matrix": {
+      "verdict": "PASS",
+      "detail": {
+        "GET_expired": "ERR key_not_found (cleaned by _is_expired)",
+        "DEL_expired": "ERR key_not_found (cleaned by _is_expired)",
+        "EXISTS_expired": "FALSE (cleaned by _is_expired)",
+        "TTL_expired": "ERR key_not_found (cleaned by _is_expired)",
+        "SET_over_SETEX": "clears expiry (_expiry[key]=None)",
+        "SETEX_over_SETEX": "replaces expiry timestamp",
+        "FLUSH": "clears both _data and _expiry"
+      }
+    },
+    "store_full_update_carveout": {
+      "verdict": "PASS",
+      "detail": "All commands adding new keys (SET L109, MSET L193, SETEX L260, APPEND L234) correctly allow updates to existing keys even at capacity via 'key not in self._data' guard."
+    },
+    "multi_key_DEL_extension": {
+      "verdict": "COMPATIBLE_EXTENSION",
+      "detail": "executor2 extended DEL to support multi-key atomic deletion (beyond spec's single-key DEL). Single-key behavior preserved. Response 'OK 1' (single) / 'OK N' (multi) conforms to 'OK <detail>' per Response Format. No spec requirement violated. Existing test 'OK' in r remains compatible."
+    },
+    "command_case_insensitivity": {
+      "verdict": "PASS",
+      "detail": "execute() L65: cmd = parts[0].upper(). All commands accept lowercase (set, get, del, etc.)."
+    },
+    "integration_scenarios": [
+      {"scenario": "SET→GET→DEL→GET→EXISTS chain", "result": "PASS — value returned → OK → ERR key_not_found → FALSE"},
+      {"scenario": "SETEX(ttl=0)→GET", "result": "PASS — immediately expired, returns ERR key_not_found"},
+      {"scenario": "SETEX(ttl=10)→TTL", "result": "PASS — returns remaining seconds ≤10"},
+      {"scenario": "FLUSH→KEYS/COUNT", "result": "PASS — KEYS→'END', COUNT→'COUNT 0'"},
+      {"scenario": "MSET atomicity (3rd pair key_too_long)", "result": "PASS — all pairs rolled back, nothing written"},
+      {"scenario": "APPEND to non-existent key", "result": "PASS — creates new key, returns OK <length>"},
+      {"scenario": "Simultaneous key/value/store limits", "result": "PASS — rejected in key→value→store order"}
+    ],
+    "existing_test_compatibility": {
+      "verdict": "PASS",
+      "detail": "Code inspection confirms all 15 assertions in tests/test_protocol.py pass against current implementation. Key change: DEL now returns 'OK 1' instead of 'OK', but test uses substring match 'OK' in r."
+    }
+  }
+}

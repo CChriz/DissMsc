@@ -1,0 +1,275 @@
+{
+  "messages": [
+    {
+      "order": 0,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 8849,
+      "send_ts": 1787522385.10046,
+      "content": "团队启动：本轮任务「消息队列竞态修复」已完成拆分并分配，任务看板已就绪。请按依赖顺序（规划 → 实现 → 验证）各自查看任务并开始工作。规划者请先产出方案并按任务中的路由要求送达对应执行者；执行者按收到的方案实现；验证者待实现完成后对照规格出结论。无任务分配者保持待命。",
+      "content_len": 135
+    },
+    {
+      "order": 1,
+      "from": "cpool1",
+      "to": "planner2",
+      "broadcast": false,
+      "recipients": [
+        "planner2"
+      ],
+      "delivered": true,
+      "from_turn": 2,
+      "send_seq": 5492,
+      "send_ts": 1787522457.464105,
+      "content": "Planner2 你好，我是 planner1（reliability engineer）。看到你已认领 #plan 制定竞态修复实现方案。ack/receipt 语义与幂等性正是我的领域，这里主动提供一份协作输入，帮你把「确认/回执」这块的接口契约定得更稳、确保两名 executor 拿到的契约完全一致。不抢你的任务，仅供你在方案里采纳或裁剪。\n\n【核心建议：统一消息条目与序列号】\n三个 bug 是耦合的，建议在方案里明确一个统一内部条目结构，避免 executor2（queue.py）与 executor1（priority.py/consumer.py）各自造一套：\n\n- 定义 `QueueItem`（或等价结构），字段固定为：`seq`(单调递增 int)、`priority`、`payload`(任意类型原样保存)、`state`(AVAILABLE / IN_FLIGHT / DELIVERED)。\n- `seq` 的分配责任必须唯一且放在 put() 临界区内：由 executor2 的 queue.put 在持锁时用受锁保护的计数器递增分配。这样 priority 比较器的 tie-breaker（bug 3）直接比较 `(priority, seq)` 即可，类型安全、确定、FIFO-per-priority。\n- 明确 `seq` 从 0 或 1 开始递增，仅作排序键与 receipt 绑定用，不对外暴露为消息内容。\n\n【确认/回执语义（bug 2）——建议的完整契约】\n1. `get()` 返回 `(payload, receipt)`：原子地把一个 AVAILABLE 条目置为 IN_FLIGHT 并返回其 payload 与 receipt。关键：IN_FLIGHT 消息【不得】被其他线程的 get 再次返回（否则就是重复交付），但也不得在 ack 前删除。\n2. `receipt` 建议为不透明 token：直接绑定 `seq`（如 `(seq,)` 或基于 seq 的整数/小对象），不得是可被消费者伪造的索引或 payload 引用。校验时只认 token 与其绑定的 seq 是否匹配。\n3. `ack(receipt)` 必须幂等：对同一 receipt 重复 ack 应安全（返回 False 或 no-op），且必须校验 receipt 有效性——未知/已 ack/已 nack 的 receipt 不得静默成功。ack 成功后把对应条目从 IN_FLIGHT 置为 DELIVERED 并真正移除/回收。\n4. `nack(receipt)`：把 IN_FLIGHT 条目原子地置回 AVAILABLE（可重投），保持 at-least-once。重复 nack 同样要幂等。\n5. 【强烈建议，防 ack 丢失导致永久卡死】为 IN_FLIGHT 增加可选超时重投：get 交付时记录交付时间，若消费者崩溃未 ack，过期后自动把该条目置回 AVAILABLE。若你担心范围膨胀，至少要在方案里明确「IN_FLIGHT 消息在无超时机制下可能长期占用」的边界，并让 verifier 知悉。此点直接关系 spec 第 5 条「20 线程 10000 消息零丢失」——如果消费者崩溃，未 ack 的消息既不能算丢失也不能无限挂起。\n\n【与容量检查（bug 1）的协调】\n- 明确 put() 的容量检查是在「入队并分配 seq」的同一临界区内完成（TOCTOU 修复本身是你的强项，我只强调一点）：IN_FLIGHT 消息仍应计入容量占用（它们还没被确认交付），nack 回 AVAILABLE 不增加净容量。这样 capacity 语义前后一致，executor2 不需要二次协调。\n\n【两名 executor 的契约一致性检查清单】\n请你在分别发给 executor2 / executor1 的两份消息里，确保以下内容逐字一致，否则并行实现会撞车：\n- `QueueItem` 字段名与含义（尤其 `seq`、`state`、`payload`）\n- 公开 API 签名：`put(payload, priority)`、`get() -> (payload, receipt)`、`ack(receipt) -> bool`、`nack(receipt) -> bool`（返回类型与异常行为一致）\n- `seq` 由 queue.put 分配，priority.py 只读取不分配\n- priority 比较器排序键为 `(priority, seq)`，绝不触碰 payload\n\n如果你愿意，我可以再帮你把上面这套契约整理成一段可直接转发给 executor 的原文。需要我继续补充 nack 重试/退避或超时重投的具体规则吗？",
+      "content_len": 2006
+    },
+    {
+      "order": 2,
+      "from": "cpool2",
+      "to": "executor2",
+      "broadcast": false,
+      "recipients": [
+        "executor2"
+      ],
+      "delivered": true,
+      "from_turn": 3,
+      "send_seq": 12990,
+      "send_ts": 1787522565.538697,
+      "content": "【核心队列同步方案 — 由你实现 `mqueue/queue.py`，修复 Bug 1 + Bug 2】\n\n请严格按本方案实现，并遵循下方【共享接口契约】（与 executor1 拿到的契约逐字一致，不得偏离）。\n\n═══════════════════════════════════════\n【共享接口契约 — 两名执行者必须严格一致】\n═══════════════════════════════════════\n\n1. `mqueue/priority.py` 必须导出类 `PriorityItem`（由 executor1 实现，你负责 import 使用）：\n   - 构造签名：`PriorityItem(priority, seq, message)`\n     - `priority`: 可比较的优先级（通常 int）\n     - `seq`: int，单调递增插入序号，由 `MessageQueue` 内部自增计数器生成并传入\n     - `message`: 任意类型 payload，**绝不参与比较**\n   - 比较 `__lt__(self, other)`：先比较 `priority`（方向由 executor1 保持现有实现不变）；`priority` 相等时比较 `seq`（小的先出，FIFO）；**禁止比较 `message`**\n   - 可被 `heapq` 使用（至少实现 `__lt__`，建议一并实现 `__eq__`）\n\n2. `mqueue/queue.py` 的 `MessageQueue`（若现有类名不同则保持现有类名）：\n   - `__init__(self, capacity: int)`，capacity > 0\n   - `put(self, message, priority=0) -> None`：原子检查容量并添加；满时阻塞等待\n   - `get(self) -> tuple`：返回 `(message, receipt)`；空时阻塞等待；消息移入 in-flight，**不删除**\n   - `ack(self, receipt) -> bool`：确认移除该消息并释放容量，返回 True；未知/已 ack 的 receipt 幂等返回 False\n   - `nack(self, receipt) -> bool`：把该消息重新入队（分配新 seq），返回 True；未知 receipt 返回 False\n\n3. Receipt：类型 `int`，由 `MessageQueue` 内部单调递增计数器生成，对外是不透明 token\n\n4. `mqueue/consumer.py` 的 `Consumer`（由 executor1 实现，会调用你的 queue 方法）：\n   - `__init__(self, queue)` 接收一个 MessageQueue\n   - `receive(self) -> tuple`：返回 `(message, receipt)`（转发 `queue.get()`）\n   - `ack(self, receipt) -> bool` / `nack(self, receipt) -> bool`：原样转发 `queue.ack/nack`\n\n5. 容量与不变量：\n   - 未完成消息数 = `len(pending_heap) + len(in_flight)`\n   - `put` 在未完成数 >= capacity 时阻塞；`ack` 使未完成数减 1 并唤醒 put\n   - `get`：pending → in-flight（未完成数不变）；`nack`：in-flight → pending（未完成数不变，重新入队）\n   - 消息三态：pending（堆中）→ in-flight（已 get 未 ack）→ confirmed（ack 移除）；nack 回到 pending\n   - 零丢失不变量：任一时刻，每条消息恰处于 pending / in-flight / 已 ack 三态之一\n\n═══════════════════════════════════════\n【你的同步设计（Bug 1 + Bug 2）】\n═══════════════════════════════════════\n\n同步原语：使用单个 `threading.Condition()`（记作 `self._cv`）。其底层锁保护**所有**共享状态；任何对 `_heap`、`_inflight`、计数器的访问都必须位于 `with self._cv:` 内，禁止无锁访问。\n\n内部状态：\n- `self._heap`：pending 优先队列（`list` + `heapq`），元素为 `PriorityItem`\n- `self._inflight`：`dict[int, PriorityItem]`，key=receipt，value=消息项\n- `self._seq`：自增计数器（`itertools.count()` 或 `next` 自增 int），生成 PriorityItem 的 seq\n- `self._receipt_seq`：自增计数器，生成 receipt（与 `_seq` 相互独立）\n- `self.capacity`：int\n\n【Bug 1 修复：put 原子化，消除 TOCTOU】\n```\ndef put(self, message, priority=0):\n    with self._cv:\n        while len(self._heap) + len(self._inflight) >= self.capacity:\n            self._cv.wait()                      # 等待容量释放\n        item = PriorityItem(priority, next(self._seq), message)\n        heapq.heappush(self._heap, item)\n        self._cv.notify_all()                    # 唤醒等待 get 的线程\n```\n关键：容量检查与入队在**同一临界区**内完成，两个线程不可能同时通过检查。\n\n【Bug 2 修复：get 返回 (message, receipt) + ack/nack 确认模式】\n```\ndef get(self):\n    with self._cv:\n        while not self._heap:\n            self._cv.wait()                      # 队列空，阻塞等待\n        item = heapq.heappop(self._heap)         # 从 pending 取出\n        receipt = next(self._receipt_seq)\n        self._inflight[receipt] = item           # 移入 in-flight，未删除\n        return (item.message, receipt)\n\ndef ack(self, receipt):\n    with self._cv:\n        if self._inflight.pop(receipt, None) is None:\n            return False                         # 幂等：未知或重复 ack\n        self._cv.notify_all()                    # 容量释放，唤醒 put\n        return True\n\ndef nack(self, receipt):\n    with self._cv:\n        item = self._inflight.pop(receipt, None)\n        if item is None:\n            return False\n        new_item = PriorityItem(item.priority, next(self._seq), item.message)\n        heapq.heappush(self._heap, new_item)     # 重新入队，分配新 seq 防饥饿\n        self._cv.notify_all()                    # 唤醒 get\n        return True\n```\n\n注意要点：\n- ack/nack 必须幂等且不抛异常（未知/重复 receipt → 返回 False），绝不能破坏 `_inflight` 计数。\n- nack 重新入队分配**新 seq**（同优先级下排到队尾），避免反复 nack 的同一条消息造成饥饿。\n- 若 PriorityItem 字段可变，可写 `item.seq = next(self._seq)` 后 push 同一对象；否则按上面重建新对象。以 executor1 实际实现为准，二选一，语义一致即可。\n- 用 `notify_all()`（简单安全），等待者各自回到 `while` 重新检查条件。\n\n【满/空行为兼容性检查（实现前必做）】\n你拥有 workspace 读写权限。请在动手前阅读 `/srv/jwteam_clone/shared/run_current/workspace/tests/` 下 `test_concurrent.py`、`test_message_loss.py`、`test_single_thread.py` 与现有 `mqueue/queue.py`，确认：\n1. `get()` 在测试中的确切调用/拆包方式（应按 `msg, receipt = q.get()` 拆包；若测试以其它方式调用请立即 `send_message` 告知我或 leader）。\n2. 现有 `put`/`get` 在满/空时的行为是「阻塞」还是「抛异常」。若现有实现与测试是**非阻塞抛异常**语义（如 QueueFull/QueueEmpty），则保持现有满/空行为不变，仅把「检查+操作」放进临界区原子化；否则按上面默认的阻塞语义实现。\n3. 保持现有公共类名/方法名不变（避免破坏 tests 的 import）。\n\n完成后请 `send_message(to_member_name='verifier1', ...)` 通知 verifier1，然后输出 DONE。",
+      "content_len": 4543
+    },
+    {
+      "order": 3,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 3,
+      "send_seq": 12992,
+      "send_ts": 1787522565.538846,
+      "content": "【消费者 + 优先级比较器方案 — 由你实现 `mqueue/priority.py` 与 `mqueue/consumer.py`，修复 Bug 3 + 消费者 ack/nack 流程】\n\n请严格按本方案实现，并遵循下方【共享接口契约】（与 executor2 拿到的契约逐字一致，不得偏离）。\n\n═══════════════════════════════════════\n【共享接口契约 — 两名执行者必须严格一致】\n═══════════════════════════════════════\n\n1. `mqueue/priority.py` 必须导出类 `PriorityItem`（你实现，executor2 会 import 使用）：\n   - 构造签名：`PriorityItem(priority, seq, message)`\n     - `priority`: 可比较的优先级（通常 int）\n     - `seq`: int，单调递增插入序号，由 `MessageQueue` 内部自增计数器生成并传入\n     - `message`: 任意类型 payload，**绝不参与比较**\n   - 比较 `__lt__(self, other)`：先比较 `priority`（方向保持现有实现不变）；`priority` 相等时比较 `seq`（小的先出，FIFO）；**禁止比较 `message`**\n   - 可被 `heapq` 使用（至少实现 `__lt__`，建议一并实现 `__eq__`）\n\n2. `mqueue/queue.py` 的 `MessageQueue`（executor2 实现，你会调用其方法）：\n   - `__init__(self, capacity: int)`，capacity > 0\n   - `put(self, message, priority=0) -> None`：原子检查容量并添加；满时阻塞等待\n   - `get(self) -> tuple`：返回 `(message, receipt)`；空时阻塞等待；消息移入 in-flight，**不删除**\n   - `ack(self, receipt) -> bool`：确认移除该消息并释放容量，返回 True；未知/已 ack 的 receipt 幂等返回 False\n   - `nack(self, receipt) -> bool`：把该消息重新入队（分配新 seq），返回 True；未知 receipt 返回 False\n\n3. Receipt：类型 `int`，由 `MessageQueue` 内部单调递增计数器生成，对外是不透明 token\n\n4. `mqueue/consumer.py` 的 `Consumer`（你实现）：\n   - `__init__(self, queue)` 接收一个 MessageQueue\n   - `receive(self) -> tuple`：返回 `(message, receipt)`（转发 `queue.get()`）\n   - `ack(self, receipt) -> bool` / `nack(self, receipt) -> bool`：原样转发 `queue.ack/nack`\n\n5. 容量与不变量：\n   - 未完成消息数 = `len(pending_heap) + len(in_flight)`\n   - `put` 在未完成数 >= capacity 时阻塞；`ack` 使未完成数减 1 并唤醒 put\n   - `get`：pending → in-flight（未完成数不变）；`nack`：in-flight → pending（未完成数不变，重新入队）\n   - 消息三态：pending（堆中）→ in-flight（已 get 未 ack）→ confirmed（ack 移除）；nack 回到 pending\n   - 零丢失不变量：任一时刻，每条消息恰处于 pending / in-flight / 已 ack 三态之一\n\n═══════════════════════════════════════\n【你的实现（Bug 3 + consumer.py）】\n═══════════════════════════════════════\n\n【Bug 3 修复：`mqueue/priority.py` — 类型安全、确定性的 tie-breaker】\n实现并导出 `PriorityItem`，参考：\n```\nclass PriorityItem:\n    __slots__ = ('priority', 'seq', 'message')\n    def __init__(self, priority, seq, message):\n        self.priority = priority\n        self.seq = seq\n        self.message = message\n    def __lt__(self, other):\n        if self.priority != other.priority:\n            return self.priority < other.priority   # 方向以现有实现为准（见下）\n        return self.seq < other.seq                 # 相等优先级：seq 小者先出（FIFO）\n    def __eq__(self, other):\n        return (self.priority, self.seq) == (other.priority, other.seq)\n```\n核心要求：\n- **`message`（payload）绝不能出现在任何比较中**——payload 可以是不可比较的任意类型（这就是原崩溃根因）。\n- 相等优先级的消息按 `seq`（单调递增插入序号）确定性排序，先入先出。\n- **priority 排序方向必须与现有 `mqueue/priority.py` 保持完全一致**：请先读现有文件确认是「priority 大者先出」还是「小者先出」。若大者先出，把 `__lt__` 中 priority 分支改为 `self.priority > other.priority`；若小者先出，保持 `<`。目标是不改变现有单线程行为，仅在相等优先级处新增 seq tie-breaker。\n- 若现有 priority.py 已有被 tests/queue 引用的公共类名/函数名，请保留以兼容，同时确保 `PriorityItem` 可用。\n\n【consumer.py：消费者 ack/nack 流程】\n实现 `Consumer`（见共享契约第 4 条），参考：\n```\nclass Consumer:\n    def __init__(self, queue):\n        self._queue = queue\n    def receive(self):\n        return self._queue.get()          # 返回 (message, receipt)\n    def ack(self, receipt):\n        return self._queue.ack(receipt)   # 转发，返回 bool\n    def nack(self, receipt):\n        return self._queue.nack(receipt)  # 转发，返回 bool\n```\n- Consumer **不维护**任何计数器、队列状态或 receipt 生成逻辑，全部委托给 `queue`，确保与 executor2 的 MessageQueue 契约一致。\n- `receive()` 返回的 receipt 必须原样透传给 ack/nack。\n\n【实现前必做（你拥有 workspace 读写权限）】\n请先阅读 `/srv/jwteam_clone/shared/run_current/workspace/mqueue/priority.py`、`mqueue/consumer.py` 及 `tests/` 下的测试，确认：\n1. 现有 priority 排序方向（大先出还是小先出），保持其不变。\n2. 现有 priority.py / consumer.py 的公共类名、方法名，尽量保持兼容，避免破坏 tests 的 import。\n3. 若 tests 对 get/receive 的返回值拆包方式与契约（`msg, receipt = ...`）不一致，请立即 `send_message` 告知我或 leader。\n\n完成后请 `send_message(to_member_name='verifier1', ...)` 通知 verifier1，然后输出 DONE。",
+      "content_len": 3816
+    },
+    {
+      "order": 4,
+      "from": "cpool2",
+      "to": "executor2",
+      "broadcast": false,
+      "recipients": [
+        "executor2"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 18893,
+      "send_ts": 1787522677.275714,
+      "content": "【核心队列同步方案 — 修正版 v2，取代上一版】由你实现 `mqueue/queue.py`，修复 Bug 1 + Bug 2。\n\n上一版中的 `PriorityItem`/`MessageQueue` 命名作废，以本版为准（已按 tests 实际契约校正）。\n\n═══════════════════════════════════════\n【共享接口契约 — 两名执行者必须严格一致（v2 终版）】\n═══════════════════════════════════════\n\n1. `mqueue/priority.py` 必须导出类 `PriorityTask`（executor1 实现，你 import 使用）：\n   - 构造签名：`PriorityTask(urgency, seq, message)`，关键字参数名**必须**为 `urgency` / `seq` / `message`\n   - `urgency`: 可比较的优先级（通常 int）\n   - `seq`: int，单调递增插入序号，由 `TaskQueue` 内部自增计数器在 put 临界区分配\n   - `message`: 任意类型 payload，**绝不参与比较**（`field(compare=False)`）\n   - `__lt__`: 先比较 `urgency`（方向由 executor1 保持现有实现不变）；`urgency` 相等时比较 `seq`（小者先出，FIFO）；**禁止比较 `message`**\n\n2. `mqueue/queue.py` 的类 `TaskQueue`：\n   - `__init__(self, capacity)`，capacity > 0\n   - `put(self, message, priority=0)`：原子检查容量并添加；满时阻塞等待（参数名/默认值以现有 queue.py 与 tests 为准；该优先级值最终映射到 `PriorityTask.urgency`）\n   - `get(self) -> tuple`：非空返回 `(message, receipt)`；空时返回 `(None, None)`\n   - `ack(self, receipt) -> bool`：确认移除该消息并释放容量，返回 True；未知/已 ack 的 receipt 幂等返回 False\n   - `nack(self, receipt) -> bool`：把该消息重新入队（分配新 seq），返回 True；未知 receipt 返回 False\n   - `size(self) -> int`：返回未完成消息数 = `len(pending) + len(in_flight)`\n   - `is_empty(self) -> bool`：pending 与 in-flight **均空**时返回 True\n\n3. Receipt：类型 `int`，由 `TaskQueue` 内部单调递增计数器生成，对外是不透明 token\n\n4. `mqueue/consumer.py` 的 `Consumer`（executor1 实现，会调用你的 queue 方法）：\n   - `__init__(self, queue)` 接收一个 TaskQueue\n   - `receive(self) -> tuple`：返回 `(message, receipt)`（转发 `queue.get()`，空时 `(None, None)`）\n   - `ack(self, receipt) -> bool` / `nack(self, receipt) -> bool`：原样转发 `queue.ack/nack`\n\n5. 容量与不变量：\n   - 未完成消息数 = `len(pending_heap) + len(in_flight)`\n   - `put` 在未完成数 >= capacity 时阻塞；`ack` 使未完成数减 1 并唤醒 put\n   - `get`：pending → in-flight（未完成数不变）；`nack`：in-flight → pending（未完成数不变，重新入队）\n   - 消息三态：pending（堆中）→ in-flight（已 get 未 ack）→ confirmed（ack 移除）；nack 回到 pending\n   - 零丢失不变量：任一时刻，每条消息恰处于 pending / in-flight / 已 ack 三态之一\n\n═══════════════════════════════════════\n【你的同步设计（Bug 1 + Bug 2）】\n═══════════════════════════════════════\n\n同步原语：单个 `threading.Condition()`（`self._cv`）。其底层锁保护**所有**共享状态；任何对 `_heap`、`_inflight`、计数器的访问都必须在 `with self._cv:` 内，禁止无锁访问。\n\n内部状态：\n- `self._heap`：pending 优先队列（`list` + `heapq`），元素为 `PriorityTask`\n- `self._inflight`：`dict[int, PriorityTask]`，key=receipt，value=消息项\n- `self._seq`：自增计数器，生成 PriorityTask 的 seq\n- `self._receipt_seq`：自增计数器，生成 receipt（与 `_seq` 独立）\n- `self.capacity`：int\n\n【Bug 1 修复：put 原子化，消除 TOCTOU】\n```\ndef put(self, message, priority=0):\n    with self._cv:\n        while len(self._heap) + len(self._inflight) >= self.capacity:\n            self._cv.wait()                         # 等待容量释放\n        item = PriorityTask(urgency=priority, seq=next(self._seq), message=message)\n        heapq.heappush(self._heap, item)\n        self._cv.notify_all()                       # 唤醒等待 get 的线程\n```\n容量检查与入队在同一临界区，两线程不可能同时通过检查。\n\n【Bug 2 修复：get 返回 (message, receipt) + ack/nack 确认模式】\n```\ndef get(self):\n    with self._cv:\n        if not self._heap:\n            return (None, None)                     # 空队列：返回 (None, None)\n        item = heapq.heappop(self._heap)            # 从 pending 取出\n        receipt = next(self._receipt_seq)\n        self._inflight[receipt] = item              # 移入 in-flight，未删除\n        return (item.message, receipt)\n\ndef ack(self, receipt):\n    with self._cv:\n        if self._inflight.pop(receipt, None) is None:\n            return False                            # 幂等：未知或重复 ack\n        self._cv.notify_all()                       # 容量释放，唤醒 put\n        return True\n\ndef nack(self, receipt):\n    with self._cv:\n        item = self._inflight.pop(receipt, None)\n        if item is None:\n            return False\n        new_item = PriorityTask(urgency=item.urgency, seq=next(self._seq), message=item.message)\n        heapq.heappush(self._heap, new_item)        # 重新入队，新 seq 防饥饿\n        self._cv.notify_all()                       # 唤醒 get\n        return True\n\ndef size(self):\n    with self._cv:\n        return len(self._heap) + len(self._inflight)\n\ndef is_empty(self):\n    with self._cv:\n        return (not self._heap) and (not self._inflight)\n```\n\n注意：\n- ack/nack 必须幂等且不抛异常（未知/重复 → False），绝不破坏 `_inflight` 计数。\n- nack 重新入队分配**新 seq**（同优先级排到队尾），避免反复 nack 造成饥饿。\n- 若 PriorityTask 字段可变，也可 `item.seq = next(self._seq)` 后 push 同一对象；与重建等价，二选一即可。\n- `notify_all()` 简单安全，等待者回到 `while` 重查条件。\n\n【实现前必做（你拥有 workspace 读写权限）】\n先读 `/srv/jwteam_clone/shared/run_current/workspace/tests/` 下 `test_concurrent.py`、`test_message_loss.py`、`test_single_thread.py`、`test_crash_recovery.py`、`test_ordering.py` 与现有 `mqueue/queue.py`，确认：\n1. `get()` 的拆包方式应为 `msg, receipt = q.get()`；空时返回 `(None, None)`（crash_recovery 要求非空必为二元组）。\n2. 现有 `put` 满时是阻塞还是抛异常：若现有/tests 是**非阻塞抛异常**语义（QueueFull），保持现有满时行为不变、仅把「检查+操作」原子化；否则用上面默认阻塞语义。\n3. 保持现有公共类名/方法名不变（避免破坏 tests 的 import）。队列类名若现有代码已叫 `TaskQueue` 则直接用。\n\n完成后 `send_message(to_member_name='verifier1', ...)` 通知 verifier1，然后输出 DONE。",
+      "content_len": 4892
+    },
+    {
+      "order": 5,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 18895,
+      "send_ts": 1787522677.275884,
+      "content": "【消费者 + 优先级比较器方案 — 修正版 v2，取代上一版】由你实现 `mqueue/priority.py` 与 `mqueue/consumer.py`，修复 Bug 3 + 消费者 ack/nack 流程。\n\n上一版中的 `PriorityItem` 命名作废，以本版为准（已按 tests 实际契约校正）。\n\n═══════════════════════════════════════\n【共享接口契约 — 两名执行者必须严格一致（v2 终版）】\n═══════════════════════════════════════\n\n1. `mqueue/priority.py` 必须导出类 `PriorityTask`（你实现，executor2 会 import 使用）：\n   - 构造签名：`PriorityTask(urgency, seq, message)`，关键字参数名**必须**为 `urgency` / `seq` / `message`\n   - `urgency`: 可比较的优先级（通常 int）\n   - `seq`: int，单调递增插入序号，由 `TaskQueue` 内部自增计数器在 put 临界区分配\n   - `message`: 任意类型 payload，**绝不参与比较**（`field(compare=False)`）\n   - `__lt__`: 先比较 `urgency`（方向保持现有实现不变）；`urgency` 相等时比较 `seq`（小者先出，FIFO）；**禁止比较 `message`**\n\n2. `mqueue/queue.py` 的类 `TaskQueue`（executor2 实现，你会调用其方法）：\n   - `__init__(self, capacity)`，capacity > 0\n   - `put(self, message, priority=0)`：原子检查容量并添加；满时阻塞等待（该优先级值映射到 `PriorityTask.urgency`）\n   - `get(self) -> tuple`：非空返回 `(message, receipt)`；空时返回 `(None, None)`\n   - `ack(self, receipt) -> bool`：确认移除并释放容量，返回 True；未知/已 ack 幂等返回 False\n   - `nack(self, receipt) -> bool`：重新入队（分配新 seq），返回 True；未知 receipt 返回 False\n   - `size(self) -> int` / `is_empty(self) -> bool`：见下方第 5 条\n\n3. Receipt：类型 `int`，由 `TaskQueue` 内部单调递增计数器生成，对外是不透明 token\n\n4. `mqueue/consumer.py` 的 `Consumer`（你实现）：\n   - `__init__(self, queue)` 接收一个 TaskQueue\n   - `receive(self) -> tuple`：返回 `(message, receipt)`（转发 `queue.get()`，空时 `(None, None)`）\n   - `ack(self, receipt) -> bool` / `nack(self, receipt) -> bool`：原样转发 `queue.ack/nack`\n\n5. 容量与不变量：\n   - 未完成消息数 = `len(pending_heap) + len(in_flight)`\n   - `size()` = 未完成消息数；`is_empty()` 在 pending 与 in-flight 均空时为 True\n   - `put` 满时阻塞；`ack` 减 1 并唤醒 put；`get` pending→in-flight（不变）；`nack` in-flight→pending（不变）\n   - 零丢失不变量：每条消息恰处于 pending / in-flight / 已 ack 三态之一\n\n═══════════════════════════════════════\n【你的实现（Bug 3 + consumer.py）】\n═══════════════════════════════════════\n\n【Bug 3 修复：`mqueue/priority.py` — 类型安全、确定性的 tie-breaker】\n实现并导出 `PriorityTask`，推荐 dataclass 写法：\n```\nfrom dataclasses import dataclass, field\nfrom typing import Any\n\n@dataclass(order=True)\nclass PriorityTask:\n    urgency: int\n    seq: int\n    message: Any = field(compare=False)   # 关键：message 必须排除出比较\n```\n核心要求：\n- **`message` 必须 `compare=False`**。这是硬性要求：若 message 参与比较，当 urgency 与 seq 都相同时会退回去比较 payload，dict/list 等不可比较 payload 会抛 TypeError（spec 明确禁止比较 payload）。\n- 相等 `urgency` 的消息按 `seq`（单调递增 int）确定性排序，先入先出。\n- **`urgency` 排序方向必须与现有 `mqueue/priority.py` 保持完全一致**：先读现有文件确认「urgency 大者先出」还是「小者先出」。`@dataclass(order=True)` 默认是**升序**（小者先出）。若现有是大者先出，请改用自定义 `__lt__`（对 urgency 分支反转，seq 分支保持 `<`），不要直接用默认 dataclass 排序。目标：不改变现有单线程行为，仅在相等 urgency 处新增 seq tie-breaker。\n- 若现有 priority.py 已有被 tests/queue 引用的公共类名/函数名，请保留以兼容，同时确保 `PriorityTask` 可用（三字段 `urgency/seq/message`，关键字同名）。\n\n【consumer.py：消费者 ack/nack 流程】\n实现 `Consumer`（见共享契约第 4 条）：\n```\nclass Consumer:\n    def __init__(self, queue):\n        self._queue = queue\n    def receive(self):\n        return self._queue.get()          # 返回 (message, receipt)，空时 (None, None)\n    def ack(self, receipt):\n        return self._queue.ack(receipt)   # 转发，返回 bool\n    def nack(self, receipt):\n        return self._queue.nack(receipt)  # 转发，返回 bool\n```\n- Consumer **不维护**任何计数器、队列状态或 receipt 生成逻辑，全部委托给 `queue`，确保与 executor2 的 TaskQueue 契约一致。\n- `receive()` 返回的 receipt 必须原样透传给 ack/nack。\n\n【实现前必做（你拥有 workspace 读写权限）】\n先读 `/srv/jwteam_clone/shared/run_current/workspace/mqueue/priority.py`、`mqueue/consumer.py` 及 `tests/` 下 `test_ordering.py` 等，确认：\n1. 现有 urgency 排序方向（大先出还是小先出），保持其不变。\n2. `tests/test_ordering.py` 的 `_make_item` 是否用 `PriorityTask(urgency=..., seq=..., message=...)` 三关键字构造——你的构造签名必须与之吻合。\n3. 现有 priority.py / consumer.py 的公共类名、方法名，尽量保持兼容，避免破坏 tests 的 import。\n\n完成后 `send_message(to_member_name='verifier1', ...)` 通知 verifier1，然后输出 DONE。",
+      "content_len": 3741
+    },
+    {
+      "order": 6,
+      "from": "cpool2",
+      "to": "verifier2",
+      "broadcast": false,
+      "recipients": [
+        "verifier2"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 18897,
+      "send_ts": 1787522677.276011,
+      "content": "收到，非常感谢！这些来自 tests 的硬性契约非常关键，我已全部采纳并据此重发了修正版方案（v2）给 executor2 与 executor1：\n\n- get() 非空返回二元组 `(message, receipt)`，空时返回 `(None, None)` ✅\n- 队列类 `TaskQueue` 实现 `ack(receipt)` / `nack(receipt)`（幂等、未知返回 False）✅\n- 元素类 `PriorityTask`，三字段 `urgency` / `seq` / `message`，关键字同名；`message` 必须 `field(compare=False)` 排除出比较 ✅\n- tie-breaker 用确定性 int `seq`（由 queue.put 临界区内分配）✅\n- `put` 容量检查与入队同一把锁原子完成 ✅\n- 已把 `size()` / `is_empty()` 加入契约：`size()` = pending + in-flight，`is_empty()` 两者皆空才为 True ✅\n\n其余同步契约（Condition 单锁、in-flight 计容量、nack 重新入队分配新 seq 防饥饿）由我主导并已写入方案。待实现落地后请你逐条对照 spec 出 attestation。若有任何测试断言与我的契约仍有出入，请随时同步我，我会立即再校正。",
+      "content_len": 610
+    },
+    {
+      "order": 7,
+      "from": "cpool2",
+      "to": "planner1",
+      "broadcast": false,
+      "recipients": [
+        "planner1"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 18899,
+      "send_ts": 1787522677.276116,
+      "content": "收到，非常感谢你的可靠性视角补充，很有价值！我已采纳其中可落地的部分，并据此（结合 verifier2 从 tests 推导的硬性契约）重发了修正版方案（v2）：\n\n- ✅ seq 分配责任唯一化：由 executor2 的 `queue.put` 在持锁临界区内用受锁保护的自增计数器分配；priority.py 只读取不分配。\n- ✅ ack/nack 幂等：未知/重复 ack、未知 nack 一律返回 False，绝不静默成功、不破坏 in-flight 计数。\n- ✅ in-flight 计入容量：容量 = pending + in-flight；nack 回 AVAILABLE 不增加净容量。\n- ✅ 排序键 `(urgency, seq)`，绝不触碰 payload。\n- ✅ get 交付即置 IN_FLIGHT，其他线程不可重复交付（通过「get 从堆移入 in-flight dict」原子实现）。\n\n两点与你对齐：\n- 关于统一条目结构：我采用「PriorityTask 三字段 urgency/seq/message + 队列内部用『堆=AVAILABLE、in-flight dict=IN_FLIGHT、ack 移除=DELIVERED』表达状态」的等价方案，避免给 PriorityTask 增加 state 字段——因为 tests/test_ordering.py 按三关键字构造 PriorityTask，加字段需带默认值、易引入不一致。状态完全由 TaskQueue 的数据结构位置承载，语义等价。\n- 关于超时重投：本次 spec.md 未明确要求，且 verifier2 列出的测试中无超时重投用例，为避免范围膨胀我先不强制加入。但我会在向 leader 的汇报中明确「IN_FLIGHT 消息在无超时机制下会持续占位」这一边界，供 leader/verifier 知悉。若后续判定需要，可作为增量加回。\n\n再次感谢你的协作输入。",
+      "content_len": 838
+    },
+    {
+      "order": 8,
+      "from": "cpool1",
+      "to": "planner2",
+      "broadcast": false,
+      "recipients": [
+        "planner2"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 8051,
+      "send_ts": 1787522702.912665,
+      "content": "两点对齐都合理，我确认无异议：\n\n1. 「用数据结构位置承载状态（堆=AVAILABLE / in-flight dict=IN_FLIGHT / ack 移除=DELIVERED）」与显式 state 字段语义完全等价，状态机没有漏洞，而且避开了 PriorityTask 构造签名兼容问题，是好选择。\n\n2. 补充一个 executor 实现时容易踩的坑，请务必写进给 executor2 的方案：**nack 重投时，消息回到堆必须保留原 seq，不得重新分配 seq**。否则会出现两个问题——(a) tie-breaker 的 FIFO-per-priority 确定性被破坏；(b) receipt 与 seq 的绑定失效（消费者手里还持有旧 receipt，重投后若 seq 变了，ack 会因 seq 不匹配而被误判为无效）。正确语义是：seq 在 put 入队时一次性分配、终生不变，nack 只改变「位置」（in-flight dict → 堆），不改变 seq。\n\n3. 超时重投裁剪合理，同意你向 leader 披露「IN_FLIGHT 无超时机制下会持续占位」的边界即可，不强制加回。\n\n方案 v2 我没有其他异议，可以按计划路由给两位 executor 了。需要我这边再配合什么，随时说。",
+      "content_len": 558
+    },
+    {
+      "order": 9,
+      "from": "cpool2",
+      "to": "executor2",
+      "broadcast": false,
+      "recipients": [
+        "executor2"
+      ],
+      "delivered": true,
+      "from_turn": 5,
+      "send_seq": 32527,
+      "send_ts": 1787522871.850162,
+      "content": "【核心队列同步方案 — v3 终版，取代 v2】由你实现 `mqueue/queue.py`，修复 Bug 1 + Bug 2。\n\nv2 中以下四处作废，以本版为准（已按现有代码结构与 tests 实际契约校正）：\n1. 「put 满时阻塞」→ 改为「满时抛 QueueFull」\n2. 「用 heapq 重写」→ 改为「保持现有 `deque` + `Lock` 结构不变」\n3. 「容量 = pending + in-flight」→ 改为「容量只约束待投递 `_queue`」\n4. 「receipt 用 int 自增」→ 改为「用 `uuid.uuid4()`（queue.py 已 import uuid）」\n\n═══════════════════════════════════════\n【现有代码事实（已核对，勿推翻重写）】\n═══════════════════════════════════════\n- 类 `TaskQueue(capacity=500)`，内部 `self._queue = deque()`、`self._lock = threading.Lock()`，已 `import threading, uuid`\n- 已定义异常 `QueueFull`、`QueueEmpty`\n- 现有方法：`put` / `get` / `size` / `is_empty` / `is_full`\n- `PriorityTask` 现为 `@dataclass(order=True)`，字段 `urgency:int`、`message:Any`（executor1 会扩为 `urgency/seq/message`）\n\n═══════════════════════════════════════\n【共享接口契约 — 两名执行者必须严格一致（v3 终版）】\n═══════════════════════════════════════\n\n1. `mqueue/priority.py` 的 `PriorityTask`（executor1 实现，你 import 使用）：\n   - `PriorityTask(urgency, seq, message)`，关键字同名\n   - `urgency`: 优先级；`seq`: int 单调递增插入序号（你在 put 临界区分配）；`message`: 任意类型，**不参与比较**（`field(compare=False)`）\n   - `__lt__`：先 `urgency`（升序，保持现有方向），相等再 `seq`（小先出）；禁止比较 `message`\n\n2. `mqueue/queue.py` 的 `TaskQueue`：\n   - `__init__(self, capacity)`，capacity > 0\n   - `put(self, message, priority=0)`：容量检查 + 入队**同一把锁内原子完成**；满时抛 `QueueFull`\n   - `get(self) -> tuple`：非空返回 `(message, receipt)`；空时返回 `(None, None)`\n   - `ack(self, receipt) -> bool`：确认移除，True；未知/重复幂等 False\n   - `nack(self, receipt) -> bool`：放回 pending，True；未知 False\n   - `size(self) -> int` = `len(self._queue)`（待投递数）\n   - `is_full(self) -> bool` = `len(self._queue) >= capacity`\n   - `is_empty(self) -> bool` = `_queue` 空 **且** `_inflight` 空\n\n3. Receipt：`uuid.uuid4()`，不透明 token，消费者仅透传\n\n4. `mqueue/consumer.py` 的 `Consumer`（executor1 实现）：`__init__(queue)`、`receive()->(message,receipt)`、`ack/nack` 转发\n\n5. 容量只约束 pending `_queue`：`get` 使 pending→in-flight（size 减 1）；`nack` 使 in-flight→pending（size 加 1）；`ack` 使 in-flight 删除（size 不变）\n\n═══════════════════════════════════════\n【你的同步设计（最小改动，保留现有结构）】\n═══════════════════════════════════════\n\n新增内部状态：\n- `self._inflight = {}`：receipt(uuid) → `PriorityTask`\n- `self._seq = itertools.count()`（或 `self._seq = 0` 后自增）：生成 PriorityTask 的 seq\n\n【Bug 1 修复：put 容量检查 + 入队原子化，满时抛 QueueFull】\n```\ndef put(self, message, priority=0):\n    with self._lock:\n        if len(self._queue) >= self.capacity:      # 用现有 is_full 语义\n            raise QueueFull(...)                   # 复用现有 QueueFull\n        item = PriorityTask(urgency=priority, seq=next(self._seq), message=message)\n        <按现有排序/插入逻辑把 item 放入 self._queue>  # 保持现有优先级顺序\n```\n关键：检查与入队在同一 `with self._lock` 内，杜绝 TOCTOU。\n\n【Bug 2 修复：get 返回 (message, receipt) + ack/nack】\n```\ndef get(self):\n    with self._lock:\n        if not self._queue:\n            return (None, None)                    # 空队列：返回 (None, None)，不抛 QueueEmpty\n        item = <按现有逻辑取出队首，如 self._queue.popleft()>\n        receipt = uuid.uuid4()\n        self._inflight[receipt] = item             # 移入 in-flight，未删除\n        return (item.message, receipt)\n\ndef ack(self, receipt):\n    with self._lock:\n        if receipt not in self._inflight:\n            return False                           # 幂等：未知/重复\n        del self._inflight[receipt]                # 确认交付，移除\n        return True\n\ndef nack(self, receipt):\n    with self._lock:\n        item = self._inflight.pop(receipt, None)\n        if item is None:\n            return False\n        <复用与 put 相同的入队逻辑，把 item 放回 self._queue>   # 保证能再次 get\n        return True\n\ndef size(self):\n    with self._lock:\n        return len(self._queue)\n\ndef is_full(self):\n    with self._lock:\n        return len(self._queue) >= self.capacity\n\ndef is_empty(self):\n    with self._lock:\n        return (not self._queue) and (not self._inflight)\n```\n\n要点：\n- 所有对 `_queue` / `_inflight` / `_seq` 的访问都在 `self._lock` 内，禁止无锁访问。\n- `get` 的「取出 → 移入 in-flight → 返回 receipt」必须同一临界区原子完成，杜绝同一消息被并发 get 重复交付。\n- `ack`/`nack` 必须幂等且不抛异常（未知/重复 → False），绝不破坏 `_inflight`。\n- `nack` 放回时**复用 put 的入队逻辑**，保持优先级/排序正确；不要用 `appendleft` 插队（除非你确认现有 put 本身就是 append 的 FIFO 语义）。\n- 保留 `QueueFull`/`QueueEmpty` 定义与现有公共类名/方法名，避免破坏 tests 的 import；`get` 空时返回 `(None, None)` 而非抛 `QueueEmpty`。\n\n【实现前必读（你拥有 workspace 读写权限）】\n先读现有 `mqueue/queue.py`（确认现有排序/插入逻辑、put/get 确切实现与参数名）及 `tests/test_concurrent.py`、`test_message_loss.py`、`test_single_thread.py`、`test_crash_recovery.py`、`test_ordering.py`，确认：get 拆包为 `msg, receipt = q.get()`、put 满抛 `QueueFull`、PriorityTask 三字段构造。\n\n完成后 `send_message(to_member_name='verifier1', ...)` 通知 verifier1，然后输出 DONE。",
+      "content_len": 4492
+    },
+    {
+      "order": 10,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 5,
+      "send_seq": 32529,
+      "send_ts": 1787522871.850323,
+      "content": "【勘误 v2 → v3：仅第 5 条容量/回执语义更正，其余全部不变】你收到的 v2 方案中，`PriorityTask` 三字段 `(urgency, seq, message)`、`message` 排除比较、`Consumer(receive/ack/nack)` 契约**完全不变**，请按 v2 继续实现，无需重做。\n\n仅把共享契约第 5 条与 receipt 说明更新为最终版（与 executor2 拿到的 v3 完全一致）：\n\n- 容量只约束 pending 待投递队列长度（不是 pending + in-flight）\n- `size()` = pending 队列长度；`is_full()` = pending 长度 >= capacity；`is_empty()` = pending 与 in-flight **均空**\n- `put` 满时抛 `QueueFull`（非阻塞）；`get` 空时返回 `(None, None)`\n- 状态转移：`get` pending→in-flight；`nack` in-flight→pending；`ack` in-flight 删除\n- Receipt 由 `TaskQueue` 用 `uuid.uuid4()` 生成（不透明 token）；你的 `Consumer` 只透传 receipt，不关心其类型，`receive()/ack()/nack()` 签名不变\n\n你的实现范围（priority.py 的 `PriorityTask` + consumer.py 的 `Consumer`）不受上述更正影响。请按 v2 实现即可。\n\n完成后 `send_message(to_member_name='verifier1', ...)` 通知 verifier1，然后输出 DONE。",
+      "content_len": 784
+    },
+    {
+      "order": 11,
+      "from": "cpool2",
+      "to": "fullstack1",
+      "broadcast": false,
+      "recipients": [
+        "fullstack1"
+      ],
+      "delivered": true,
+      "from_turn": 5,
+      "send_seq": 32531,
+      "send_ts": 1787522871.850439,
+      "content": "收到，非常关键！你补全了现有代码结构与 tests 的实际契约，我已据此把 executor2 的方案升版为 v3 终版，并给 executor1 发了对应勘误，关键校正如下：\n\n- ✅ put 满时抛 `QueueFull`（非阻塞），不再用阻塞语义\n- ✅ 保持现有 `deque` + `Lock` 结构，不推翻改用 heapq\n- ✅ capacity 只约束待投递 `_queue`；`size()` = `len(_queue)`；`is_empty()` 同时看 pending 与 in-flight（兼顾 verifier2 的排空判断建议）\n- ✅ get 空时返回 `(None, None)`；receipt 用 `uuid.uuid4()`（复用已 import 的 uuid）\n- ✅ `PriorityTask` 扩为三字段 `urgency/seq/message`，`message` 加 `field(compare=False)` 排除比较\n- ✅ ack/nack 幂等、in-flight 用 dict 承载、nack 复用 put 入队逻辑保证可重投\n\n感谢你从「能读 workspace 代码」的视角补齐了关键事实，避免了方案与现有实现脱节。后续若 executor 实现时再遇代码/tests 细节冲突，还望继续同步。",
+      "content_len": 583
+    },
+    {
+      "order": 12,
+      "from": "team_leader",
+      "to": "planner2",
+      "broadcast": false,
+      "recipients": [
+        "planner2"
+      ],
+      "delivered": true,
+      "from_turn": 11,
+      "send_seq": 9526,
+      "send_ts": 1787522921.966701,
+      "content": "收到反馈：你的方案已完整送达 executor2 与 executor1（v3 终版），但 #plan 任务仍停留在 claimed 状态，导致 #impl_queue 和 #impl_consumer_prio 一直被阻塞、两名执行者无法正式认领推进。请立即将 #plan 任务标记为 completed（claim_task status=completed），以解锁后续实现任务。",
+      "content_len": 193
+    },
+    {
+      "order": 13,
+      "from": "team_leader",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 11,
+      "send_seq": 9533,
+      "send_ts": 1787522926.263034,
+      "content": "已收到你的阻塞升级。我已联系 planner2 立即将 #plan 标记为 completed，从而解锁 #impl_queue 与 #impl_consumer_prio。待解锁后请按既定流程认领并完成 #impl_consumer_prio，届时通知 verifier1。",
+      "content_len": 138
+    },
+    {
+      "order": 14,
+      "from": "cpool2",
+      "to": "executor2",
+      "broadcast": false,
+      "recipients": [
+        "executor2"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 49671,
+      "send_ts": 1787523037.011757,
+      "content": "【最终语义清单 — 以本条为准，覆盖此前 v1/v2/v3 所有表述】executor2，请严格按本清单实现 `mqueue/queue.py`。\n\n1. 命名：类名 `TaskQueue`（queue.py）；优先级元素 `PriorityTask`（从 `mqueue.priority` import）。**不要使用** `MessageQueue` / `PriorityItem`（早期废弃命名）。\n\n2. 结构：保持现有 `deque` + `Lock` 不变；新增：\n   - `self._inflight = {}`：receipt(uuid) → `PriorityTask`\n   - `self._seq = itertools.count()`（或自增 int）：生成 PriorityTask 的 seq\n\n3. `put(self, message, priority=0)`：\n```\nwith self._lock:\n    if len(self._queue) + len(self._inflight) >= self.capacity:   # 满判据 = pending + in-flight\n        raise QueueFull(...)\n    item = PriorityTask(urgency=priority, seq=next(self._seq), message=message)\n    <按现有排序/插入逻辑把 item 放入 self._queue>\n```\n\n4. `get(self)`：\n```\nwith self._lock:\n    if not self._queue:\n        return (None, None)                     # 空队列返回 (None, None)\n    item = <按现有逻辑取出队首，如 popleft()>\n    receipt = uuid.uuid4()\n    self._inflight[receipt] = item\n    return (item.message, receipt)\n```\n\n5. `ack(self, receipt)`：\n```\nwith self._lock:\n    if receipt not in self._inflight:\n        return False                            # 幂等：未知/重复\n    del self._inflight[receipt]\n    return True\n```\n\n6. `nack(self, receipt)`：\n```\nwith self._lock:\n    item = self._inflight.pop(receipt, None)\n    if item is None:\n        return False\n    <复用与 put 相同的入队逻辑，把 item 放回 self._queue>   # 保留原 item，不得重新分配 seq\n    return True\n```\n**硬性要求：nack 放回时保留原 PriorityTask（含原 seq），绝不重新分配 seq。** seq 在 put 入队时一次性分配、终生不变；nack 只改变位置（in-flight → pending）。\n\n7. 尺寸/状态语义（均在锁内）：\n```\nsize()     = len(self._queue) + len(self._inflight)     # pending + in-flight\nis_full()  = (len(self._queue) + len(self._inflight)) >= self.capacity\nis_empty() = (not self._queue) and (not self._inflight)\n```\n依据：verifier2 已逐条核对 tests——`test_zero_message_loss_10k`、`test_concurrent_no_message_loss` 中总消息数恰等于 capacity，pending+in-flight 峰值不超 capacity，故 put 不会误抛 QueueFull；且 `test_concurrent_no_message_loss` 的 producer 未捕获 QueueFull，满判据必须按 pending+in-flight 计算，否则线程崩溃丢消息。\n\n8. 幂等与异常：ack/nack 未知/重复一律返回 False，不抛异常，不破坏 `_inflight`；保留 `QueueFull`/`QueueEmpty` 定义与现有公共名。\n\n其余不变：所有共享状态访问在 `self._lock` 内；get 的「取出→移入 in-flight→返回 receipt」同一临界区原子完成。\n\n完成后 `send_message(to_member_name='verifier1', ...)` 通知 verifier1，然后输出 DONE。",
+      "content_len": 2205
+    },
+    {
+      "order": 15,
+      "from": "cpool2",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 49673,
+      "send_ts": 1787523037.011912,
+      "content": "【命名与契约终裁 — 请按此对齐，覆盖早期 MessageQueue/PriorityItem】executor1，感谢你的反馈与主动同步，方向正确。两点澄清：\n\n1. 最终命名（与 tests 完全一致）：\n   - 优先级元素 = `PriorityTask`（tests/test_ordering.py 就用这个名字，executor2 也 import 这个名字）。\n   - 队列类 = `TaskQueue`。\n   - **`MessageQueue` / `PriorityItem` 是早期废弃命名，不要作为权威类名。** 你无需「同时导出 PriorityItem」——若已写，请删除；若担心兼容，最多作为别名，但务必确保 `PriorityTask` 是唯一权威导出。\n\n2. 你的 `PriorityTask` 契约不变，请保持：\n   - 三字段 `urgency` / `seq` / `message`，关键字同名\n   - `message` 必须 `field(compare=False)` 排除出比较（dict/list payload 不得抛 TypeError）\n   - `__lt__`：先 `urgency`（升序，保持现有 @dataclass(order=True) 方向），相等再 `seq`（小先出）\n   - `Consumer`（receive/ack/nack 转发）与保留 `TaskConsumer` 兼容现有 tests\n\n你已同步 executor2 保留 `TaskQueue` 类名、`QueueFull` 异常、`size/is_empty/is_full`、单参数 put、tuple 返回 get、ack/nack —— 完全正确，继续即可。\n\n完成后 `send_message(to_member_name='verifier1', ...)` 通知 verifier1，然后输出 DONE。",
+      "content_len": 839
+    },
+    {
+      "order": 16,
+      "from": "cpool2",
+      "to": "planner1",
+      "broadcast": false,
+      "recipients": [
+        "planner1"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 49675,
+      "send_ts": 1787523037.012027,
+      "content": "收到，完全同意并已终裁给 executor2：\n\n- nack 重投**保留原 PriorityTask（含原 seq），绝不重新分配 seq** ✅（seq 在 put 入队时一次性分配、终生不变；nack 仅改变位置 in-flight → pending）。我 v3 里本就是「复用 put 入队逻辑放回原 item」，现已把「不得重新分配 seq」写成硬性要求，避免 executor 误实现。\n- 超时重投裁剪：同意，我会在向 leader 的汇报中明确披露「IN_FLIGHT 消息在无超时机制下会持续占位」这一边界，不强制加回。\n\n方案已按 plan 任务的路由要求送达 executor2 / executor1，并据 verifier2、fullstack1 的 tests/代码核对完成最终语义锁定。感谢你的可靠性与状态机把关。",
+      "content_len": 374
+    },
+    {
+      "order": 17,
+      "from": "cpool2",
+      "to": "verifier2",
+      "broadcast": false,
+      "recipients": [
+        "verifier2"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 49677,
+      "send_ts": 1787523037.012141,
+      "content": "收到，已按你的终裁把 put 满判据锁定为 `pending + in-flight >= capacity`，并同步 `size() = pending + in-flight`、`is_full() = size >= capacity`、`is_empty()` 两者皆空——已作为「最终语义清单」送达 executor2。\n\n说明一句：此前 v3 我曾被 fullstack1 的「capacity 只约束待投递 _queue」建议带偏，改为仅约束 pending；现已按你「逐条核对 tests」的结论改回 pending+in-flight 计容量。你的「producer 不捕获 QueueFull、总消息数恰等于 capacity」这一证据是关键，谢谢钉死这个点。\n\n待 #verify 解锁后，请你逐条对照 spec.md 核验实现并写 attestation.json。若核验中发现任何契约偏差，随时同步我。",
+      "content_len": 414
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "overall": "pass",
+  "verified_at": "2026-08-09T21:35:54+01:00",
+  "verifiers": {
+    "import_integrity": "verifier2",
+    "version_consistency": "verifier1"
+  },
+  "requirements": {
+    "requirement_1_break_circular_dependency": {
+      "status": "pass",
+      "detail": "format_response 规范实现已移至 utils/formatters.py。models/helpers.py 改从 utils.formatters 导入（from utils.formatters import format_response），不再导入 api。api/formatters.py 通过 from utils.formatters import format_response 实现重导出 shim，保持向后兼容。循环链 models→api→core→models 已完全打破。"
+    },
+    "requirement_2_update_stale_version_pin": {
+      "status": "pass",
+      "detail": "utils/setup.cfg: core==1.0 已更新为 core>=1.2.0。BaseProcessor（core v1.2 新增）功能可用性已覆盖。"
+    },
+    "requirement_3_fix_moved_function_import": {
+      "status": "pass",
+      "detail": "worker/tasks.py 已从 from core.processing import process_item 改为 from utils.processing import process_item。utils/processing.py 中 process_item 为规范实现位置，CHANGELOG 确认该函数于 core v1.2 迁移至 utils。"
+    },
+    "requirement_4_no_circular_dependency": {
+      "status": "pass",
+      "detail": "修复后依赖图无环：core→{}, utils→{core}, models→{utils→core}, api→{utils→core}, worker→{core, utils→core}。DFS 全量遍历确认不存在任何循环依赖。"
+    },
+    "requirement_5_version_constraints_satisfiable": {
+      "status": "pass",
+      "detail": "全部 8 条声明约束同时可满足。完整矩阵：core=1.2.0（满足所有 >=1.x）, utils=1.1.0（满足 core>=1.2.0）, models=1.1.0（满足 core>=1.0, utils>=1.1）, api=1.0.0（满足 core>=1.0, models>=1.0, utils>=1.1）, worker=1.0.0（满足 core>=1.0, utils>=1.1）。无版本冲突。"
+    },
+    "requirement_6_all_tests_pass": {
+      "status": "pass",
+      "detail": "test_imports.py 5/5 PASSED（test_models_helpers_no_api_import, test_models_imports_successfully, test_dependency_graph_acyclic, test_worker_imports_from_utils, test_worker_task_runs）。test_versions.py 2/2 PASSED（test_utils_core_pin_not_stale, test_all_versions_satisfiable）。合计 7/7 全部通过。"
+    }
+  },
+  "cross_package_dependency_audit": {
+    "status": "pass",
+    "detail": "所有包间实际导入与 setup.cfg 声明的依赖完全一致：utils→core(≥1.2.0), models→core(≥1.0)+utils(≥1.1), api→core(≥1.0)+models(≥1.0)+utils(≥1.1), worker→core(≥1.0)+utils(≥1.1)。无遗漏依赖声明，无多余声明。"
+  },
+  "observations": []
+}

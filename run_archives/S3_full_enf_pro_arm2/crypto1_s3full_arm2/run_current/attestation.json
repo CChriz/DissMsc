@@ -1,0 +1,166 @@
+{
+  "audit": {
+    "title": "CRYPTO1: AES-GCM Encryption Service — 安全审计裁决",
+    "spec_version": "spec/spec.md (2026-08-10)",
+    "auditor": "verifier1 (security auditor)",
+    "co_verifier": "verifier2 (security test engineer)",
+    "timestamp": "2026-08-10T01:52:45+01:00",
+    "overall_verdict": "PASS",
+    "summary": "四个密码学规范需求全部满足。实现正确修复了三个已识别的漏洞：nonce 计数器替换为 os.urandom(12)，PBKDF2 迭代次数从 1,000 提升至 600,000，GCM tag 截断已通过 AESGCM 高级 API 消除，使用完整 16 字节 tag。"
+  },
+
+  "requirements": {
+    "req_1_nonce": {
+      "id": "REQ-1",
+      "spec_text": "Nonces must be 96-bit (12 bytes) and cryptographically random — not counter-based",
+      "verdict": "PASS",
+      "evidence": {
+        "nonce_py": {
+          "file": "crypto_service/nonce.py",
+          "finding": "generate_nonce() 使用 os.urandom(12)。无计数器变量、无 struct.pack、无时间戳或 PID。纯 CSPRNG 来源的 96-bit nonce。文档字符串引用了 NIST SP 800-38D §8.3 碰撞界限（2^48 消息，碰撞概率 < 2^-32）。",
+          "verdict": "PASS"
+        },
+        "encryption_py": {
+          "file": "crypto_service/encryption.py",
+          "finding": "encrypt() 每次调用在内部通过 os.urandom(GCM_NONCE_LENGTH) 生成新鲜 nonce（第 31 行）。不接收外部 nonce 参数——nonce 由内部生成，防止调用方误用。nonce 位于输出 bytes[0:12]。",
+          "verdict": "PASS"
+        },
+        "negative_check": {
+          "description": "已验证无计数器模式（counter += 1、itertools.count）、无基于时间戳的 nonce、无 PID/主机名混入、无确定性 nonce 生成器。",
+          "verdict": "PASS"
+        },
+        "verifier2_confirmation": {
+          "finding": "静态分析确认：无 NonceGenerator 类、无 struct.pack、无 .ljust 填充。所有 nonce 生成路径均使用 os.urandom(12)。",
+          "verdict": "PASS"
+        }
+      }
+    },
+
+    "req_2_kdf": {
+      "id": "REQ-2",
+      "spec_text": "Key derivation must use PBKDF2 with >= 100,000 iterations",
+      "verdict": "PASS",
+      "evidence": {
+        "constants_py": {
+          "file": "crypto_service/_constants.py",
+          "finding": "PBKDF2_ITERATIONS = 600_000（第 24 行）——是 100,000 最低要求的 6 倍。PBKDF2_HASH = 'sha256'（第 25 行）——HMAC-SHA256，非 SHA1。PBKDF2_DKLEN = 32（第 26 行）——正确的 AES-256 密钥长度。PBKDF2_MIN_ITERATIONS = 100_000（第 29 行）——作为下限强制实施。",
+          "verdict": "PASS"
+        },
+        "key_derivation_py": {
+          "file": "crypto_service/key_derivation.py",
+          "finding": "derive_key() 使用 hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, iterations, dklen=32)。验证 salt 长度 == 16（第 45 行）和 iterations >= PBKDF2_MIN_ITERATIONS（第 47 行）。默认 iterations = 600,000（第 31 行）。每次 KDF 调用均通过 generate_salt()（第 64 行）使用 os.urandom(16) 生成独立 salt。",
+          "verdict": "PASS"
+        },
+        "negative_check": {
+          "description": "已验证无硬编码低迭代次数（原 bug 为 1,000）。无 SHA1 使用。无固定/静态 salt。",
+          "verdict": "PASS"
+        },
+        "verifier2_confirmation": {
+          "finding": "PBKDF2_ITERATIONS = 600,000 >> 100,000 最低要求。PBKDF2_MIN_ITERATIONS = 100,000 并有 ValueError 强制实施。满足 OWASP 2023 建议（SHA256 的 PBKDF2 ≥ 600,000 次迭代）。",
+          "verdict": "PASS"
+        }
+      }
+    },
+
+    "req_3_tag": {
+      "id": "REQ-3",
+      "spec_text": "GCM authentication tag must be full 16 bytes — no truncation",
+      "verdict": "PASS",
+      "evidence": {
+        "encryption_py": {
+          "file": "crypto_service/encryption.py",
+          "finding": "使用 cryptography.hazmat.primitives.ciphers.aead.AESGCM 高级 API。AESGCM.encrypt() 内部自动将完整 16 字节 tag 附加到密文——无手动 tag 处理，无 tag[:8] 截断。AESGCM.decrypt() 使用常量时间比较验证 tag，失败时抛出 InvalidTag，被捕获并重新抛出为 DecryptionError（第 67 行）。消除了手动 tag 比较带来的时序侧信道风险。",
+          "verdict": "PASS"
+        },
+        "constants_py": {
+          "file": "crypto_service/_constants.py",
+          "finding": "TAG_LEN = 16（第 10 行）——tag 长度的唯一数据源。key_derivation.py 中 assemble_blob() 验证 tag 长度 == TAG_LEN（第 131 行）。密文格式：salt(16) || iterations(4) || nonce(12) || tag(16) || ciphertext —— tag 始终为完整 16 字节，位于偏移量 32。",
+          "verdict": "PASS"
+        },
+        "negative_check": {
+          "description": "已验证无 tag[:8] 切片、无 min_tag_length 参数、无手动 tag 比较（==、!=）、无 hex 格式 tag 比较。仅使用库提供的常量时间验证。",
+          "verdict": "PASS"
+        },
+        "verifier2_confirmation": {
+          "finding": "未发现 tag 截断。AESGCM 高级 API 防止手动 tag 处理错误。TAG_LEN = 16 在常量中定义并强制实施。自定义 DecryptionError 正确包装了 InvalidTag。",
+          "verdict": "PASS"
+        }
+      }
+    },
+
+    "req_4_salt": {
+      "id": "REQ-4",
+      "spec_text": "Salt generation using os.urandom() is already correct — do not modify it",
+      "verdict": "PASS",
+      "evidence": {
+        "utils_py": {
+          "file": "crypto_service/utils.py",
+          "finding": "文件与规范基线一致，未作修改。generate_salt(size=16) 仍使用 os.urandom(size)（第 13 行）。无修改、无替换为 random.randbytes() 或其他非密码学来源。",
+          "verdict": "PASS"
+        },
+        "salt_usage": {
+          "finding": "key_derivation.py 新增了自己的 generate_salt()（第 62 行），使用 os.urandom(SALT_LEN)——这是额外的辅助函数，并非对 utils.py 的修改。两者均正确使用 os.urandom()。",
+          "verdict": "PASS"
+        },
+        "verifier2_confirmation": {
+          "finding": "utils.py 未修改——仍使用 os.urandom(size)。所有 salt 生成路径均确认正确。",
+          "verdict": "PASS"
+        }
+      }
+    }
+  },
+
+  "cross_cutting_findings": [
+    {
+      "id": "CC-1",
+      "severity": "LOW",
+      "category": "测试兼容性",
+      "title": "遗留测试文件引用了已移除的 API 类",
+      "finding": "tests/test_encrypt_decrypt.py 仍在导入 FileEncryptionService（来自 crypto_service.encryption）和 NonceGenerator（来自 crypto_service.nonce）。两个类在新实现中均已移除——encryption.py 现在提供独立的 encrypt()/decrypt() 函数，nonce.py 提供 generate_nonce()。运行 test_encrypt_decrypt.py 会因 ImportError 失败。",
+      "cryptographic_impact": "无——这是测试工具问题，非密码学缺陷。实际的密码学实现（nonce.py、key_derivation.py、encryption.py）是正确的。",
+      "recommendation": "更新 test_encrypt_decrypt.py 以使用新的函数式 API：encrypt(plaintext, key, associated_data) → bytes、decrypt(data, key, associated_data) → bytes，以及 key_derivation.py 中的 derive_key(password, salt)。此为非阻塞性备注，用于后续测试维护周期。"
+    },
+    {
+      "id": "CC-2",
+      "severity": "INFO",
+      "category": "代码质量",
+      "title": "_constants.py 参数集中管理",
+      "finding": "所有密码学常量（长度、偏移量、迭代次数）集中在 crypto_service/_constants.py 作为唯一数据源。这是安全性正向实践——防止模块间参数漂移，使审计更加直接。",
+      "cryptographic_impact": "正向——降低模块间参数不一致的风险。"
+    },
+    {
+      "id": "CC-3",
+      "severity": "INFO",
+      "category": "代码质量",
+      "title": "嵌入迭代次数的密文格式支持参数迁移",
+      "finding": "key_derivation.py 实现了自描述的密文 blob 格式（salt || iterations || nonce || tag || ciphertext），包含 pack_iterations/unpack_iterations。这使得未来 KDF 参数升级（如 600K → 1.2M）不会破坏向后兼容——每个 blob 自带其迭代次数。",
+      "cryptographic_impact": "正向——支持参数迁移的前向兼容格式。"
+    }
+  ],
+
+  "attack_vector_assessment": {
+    "nonce_reuse": {
+      "risk": "已缓解",
+      "mechanism": "每次加密使用 os.urandom(12)；2^48 消息时碰撞概率 2^-32（NIST SP 800-38D §8.3）",
+      "previous_state": "基于计数器的 nonce，重启/多实例场景下易重复使用"
+    },
+    "weak_kdf": {
+      "risk": "已缓解",
+      "mechanism": "PBKDF2-HMAC-SHA256，600,000 次迭代；商用 GPU 约 10^4 次/秒猜测 vs 1,000 次迭代时的 10^9 次/秒",
+      "previous_state": "1,000 次迭代——商用 GPU 数分钟内可破解"
+    },
+    "tag_forgery": {
+      "risk": "已缓解",
+      "mechanism": "完整 128-bit（16 字节）tag，通过 AESGCM API 实现；常量时间验证；防伪强度 2^128",
+      "previous_state": "8 字节截断 tag——防伪强度降至 2^64（生日攻击可行）"
+    }
+  },
+
+  "references": {
+    "nist_sp800_38d_s8_3": "GCM nonce 长度与唯一性要求",
+    "nist_sp800_132": "PBKDF2 最低迭代次数建议",
+    "owasp_2023": "密码存储速查表——PBKDF2-SHA256 ≥ 600,000 次迭代",
+    "joux_2006": "GCM 认证失败（nonce 重用破坏机密性与真实性）",
+    "cve_2022_21449": "生产环境 TLS 实现中的 tag 截断漏洞模式"
+  }
+}

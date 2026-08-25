@@ -1,0 +1,49 @@
+{
+  "verifier": "verifier1",
+  "timestamp": "2026-08-08T00:47:17+01:00",
+  "spec_reference": "/srv/jwteam_clone/shared/run_current/spec/spec.md",
+  "workspace_reference": "/srv/jwteam_clone/shared/run_current/workspace/app.py",
+  "verdict": "PASS",
+  "summary": "All 5 compatibility requirements (E1-E5) and all 7 acceptance criteria verified against spec — no deviations found.",
+  "checks": {
+    "E1": {
+      "description": "ADD shim: field rename display_name → full_name at /v1/users/<int:uid>",
+      "route": "/v1/users/<int:uid>",
+      "status": "PASS",
+      "details": "Route present at line 88. Calls v2_get_user(uid). Correctly renames display_name to full_name via data.pop('display_name')."
+    },
+    "E2": {
+      "description": "ADD shim: flatten nested preferences response at /v1/users/<int:uid>/preferences",
+      "route": "/v1/users/<int:uid>/preferences",
+      "status": "PASS",
+      "details": "Route present at line 97. Calls v2_get_preferences(uid). Correctly flattens by returning data['preferences'] only."
+    },
+    "E3": {
+      "description": "ADD shim: inject page=1 default at /v1/users/search",
+      "route": "/v1/users/search",
+      "status": "PASS",
+      "details": "Route present at line 105. Correctly injects page=1 default when absent, then forwards to v2_search_users()."
+    },
+    "E4": {
+      "description": "NO shim: security fix — do NOT create /v1/users/<int:uid>/tokens",
+      "route": "/v1/users/<int:uid>/tokens",
+      "status": "PASS",
+      "details": "No v1 route for tokens exists. Security rationale documented in comments (lines 115-116). v2 endpoint (lines 68-73) remains intact."
+    },
+    "E5": {
+      "description": "REMOVE shim: delete dead-code /v1/users/legacy_export route",
+      "route": "/v1/users/legacy_export",
+      "status": "PASS",
+      "details": "legacy_export route completely removed — no trace in app.py. v2 export endpoint (lines 77-79) remains intact."
+    }
+  },
+  "acceptance_criteria": {
+    "AC1_v1_user_full_name": {"status": "PASS", "detail": "/v1/users/<int:uid> returns full_name from renamed display_name"},
+    "AC2_v1_preferences_flat": {"status": "PASS", "detail": "/v1/users/<int:uid>/preferences returns flat shape by extracting data['preferences']"},
+    "AC3_v1_search_default": {"status": "PASS", "detail": "/v1/users/search injects page=1 default when param absent"},
+    "AC4_v1_tokens_404": {"status": "PASS", "detail": "No v1 tokens route — Flask returns 404 by default"},
+    "AC5_v1_legacy_export_404": {"status": "PASS", "detail": "legacy_export route deleted — Flask returns 404 by default"},
+    "AC6_v2_regression": {"status": "PASS", "detail": "All 5 v2 endpoints (v2_get_user, v2_get_preferences, v2_search_users, v2_get_tokens, v2_export) verified intact"},
+    "AC7_tests_pass": {"status": "PASS", "detail": "Executor1 reports: python -m pytest tests/ -v — 11 passed, 0 failed"}
+  }
+}

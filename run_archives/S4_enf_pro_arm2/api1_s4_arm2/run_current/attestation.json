@@ -1,0 +1,88 @@
+{
+  "security": {
+    "verdict": "pass",
+    "auditor": "verifier1",
+    "timestamp": "2026-08-10T00:12:45+01:00",
+    "summary": "All 5 security checks passed. No authentication bypass vectors, no data exposure risks, E4 security fix correctly enforced.",
+    "checks": [
+      {
+        "id": "E1",
+        "endpoint": "/v1/users/<int:uid>",
+        "type": "field_rename_shim",
+        "verdict": "pass",
+        "details": "Shim at line 93-99 correctly delegates to v2_get_user() and renames display_name→full_name via data.pop(). No auth bypass risk: v2 handler has no auth requirements for this endpoint, so v1 shim cannot introduce an auth bypass. Response transformation is clean — no data exposure beyond what v2 returns."
+      },
+      {
+        "id": "E2",
+        "endpoint": "/v1/users/<int:uid>/preferences",
+        "type": "response_flatten_shim",
+        "verdict": "pass",
+        "details": "Shim at line 103-108 correctly delegates to v2_get_preferences() and flattens nested 'preferences' object to v1 flat shape. No auth bypass risk: v2 handler has no auth requirements. Flattening with data.get('preferences', {}) safely handles missing key edge case."
+      },
+      {
+        "id": "E3",
+        "endpoint": "/v1/users/search",
+        "type": "default_param_shim",
+        "verdict": "pass",
+        "details": "Shim at line 112-116 uses shared _search_users() core function, injecting page='1' as default. v2 route still enforces page parameter (abort 400 if missing). No auth bypass risk: search endpoint has no auth requirements. Code reuse via shared helper avoids logic drift between v1 and v2."
+      },
+      {
+        "id": "E4",
+        "endpoint": "/v1/users/<int:uid>/tokens",
+        "type": "no_shim_security_fix",
+        "verdict": "pass",
+        "details": "CRITICAL CHECK — PASSED. No v1 route registered for /v1/users/<int:uid>/tokens. The v2 endpoint (line 73-78) correctly enforces Bearer token authentication (abort 401 if missing/invalid). A v1 shim would have silently re-introduced the security vulnerability where tokens were returned without auth checks. Comment at line 119-120 correctly documents the security rationale. Any v1 request to this path will receive 404 from Flask, preventing the auth bypass entirely."
+      },
+      {
+        "id": "E5",
+        "endpoint": "/v1/users/legacy_export",
+        "type": "dead_code_removal",
+        "verdict": "pass",
+        "details": "v1_legacy_export route function has been completely removed from app.py. No residual route, no orphaned handler, no dead code fragments. Comment at line 123 documents the removal reason. Reduces attack surface and maintenance burden."
+      }
+    ],
+    "cross_cutting": {
+      "auth_bypass_summary": "No authentication bypass risks identified. E1/E2/E3 shims delegate to v2 handlers that do not require authentication. E4 (the only auth-gated endpoint) correctly lacks a v1 shim. The security model is preserved: v2 auth requirements are not circumvented by any compatibility layer.",
+      "data_exposure_summary": "No data exposure concerns. All shims transform v2 response shapes without introducing new fields, leaking internal state, or exposing data beyond what the corresponding v2 endpoint returns.",
+      "code_quality": "Clean implementation. Shared _search_users() helper avoids code duplication. Comments document security rationale for E4's missing shim. Dead code (E5) fully removed."
+    }
+  },
+  "tests": {
+    "verdict": "pass",
+    "pytest_summary": "11 passed, 0 failed, 0 errors in 0.10s",
+    "details": {
+      "total_tests": 11,
+      "v1_compat_tests": 5,
+      "v2_endpoint_tests": 6,
+      "test_suite": [
+        {"test": "test_e1_v1_uses_old_field_name", "status": "PASSED", "check": "v1 response contains 'full_name', not 'display_name'"},
+        {"test": "test_e2_v1_flat_response", "status": "PASSED", "check": "v1 preferences response is flat, no nested keys"},
+        {"test": "test_e3_v1_no_param_required", "status": "PASSED", "check": "v1 search works without 'page' parameter"},
+        {"test": "test_e4_no_v1_shim", "status": "PASSED", "check": "/v1/users/<uid>/tokens returns 404"},
+        {"test": "test_e5_stale_shim_removed", "status": "PASSED", "check": "/v1/users/legacy_export returns 404"},
+        {"test": "test_e1_v2_uses_new_field", "status": "PASSED", "check": "v2 response contains 'display_name'"},
+        {"test": "test_e2_v2_nested_response", "status": "PASSED", "check": "v2 preferences returns 200"},
+        {"test": "test_e3_v2_requires_param", "status": "PASSED", "check": "v2 search without page returns 400"},
+        {"test": "test_e3_v2_with_param", "status": "PASSED", "check": "v2 search with page=1 returns 200"},
+        {"test": "test_e4_v2_requires_auth", "status": "PASSED", "check": "v2 tokens without auth returns 401"},
+        {"test": "test_e4_v2_with_auth", "status": "PASSED", "check": "v2 tokens with Bearer token returns 200"}
+      ]
+    },
+    "acceptance_criteria": {
+      "AC1_v1_field_rename": {"status": "PASS", "detail": "GET /v1/users/1 → 200, response has 'full_name' (not 'display_name'). app.py L93-99: v1_get_user calls v2_get_user, renames display_name→full_name."},
+      "AC2_v1_flat_preferences": {"status": "PASS", "detail": "GET /v1/users/1/preferences → 200, flat v1 shape. app.py L103-108: v1_get_preferences extracts nested 'preferences' object."},
+      "AC3_v1_search_default_param": {"status": "PASS", "detail": "GET /v1/users/search (no params) → 200. app.py L112-116: v1_search_users injects page='1' default via shared _search_users()."},
+      "AC4_v1_tokens_404": {"status": "PASS", "detail": "GET /v1/users/1/tokens → 404. app.py L119-120: correctly has NO v1 shim route."},
+      "AC5_legacy_export_removed": {"status": "PASS", "detail": "GET /v1/users/legacy_export → 404. app.py L123: v1_legacy_export route deleted, only comment remains."},
+      "AC6_v2_regression": {"status": "PASS", "detail": "All 6 v2 endpoint tests pass: E1 (display_name), E2 (nested 200), E3 (400 without page, 200 with page), E4 (401 without auth, 200 with Bearer)."},
+      "AC7_all_tests_pass": {"status": "PASS", "detail": "11/11 tests passed, 0 failed, 0 errors."}
+    },
+    "code_review": {
+      "E1_shim": "app.py L93-99: Clean field rename using data.pop('display_name', None). Properly delegates to v2_get_user().",
+      "E2_shim": "app.py L103-108: Extracts data.get('preferences', {}) to flatten. Properly delegates to v2_get_preferences().",
+      "E3_shim": "app.py L112-116: Injects page='1', passes through q param. Shares _search_users() with v2 — no logic duplication.",
+      "E4_no_shim": "app.py L119-120: No route registered for /v1/users/<uid>/tokens. Comment documents security rationale.",
+      "E5_removal": "app.py L123: v1_legacy_export function removed. Comment documents migration status."
+    }
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "messages": [
+    {
+      "order": 0,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 6,
+      "send_seq": 750,
+      "send_ts": 1786174050.986598,
+      "content": "团队启动！本次任务：为 service.py 的 3 个 API 调用编写 mock-based 测试。\n\n任务分工：\n- **planner1** → 认领 #plan：阅读 spec/spec.md 制定实现计划，完成后将计划发送给 executor1\n- **executor1** → 等待 #plan 完成后认领 #implement：按 planner1 的计划实现测试代码和修复 service.py，完成后通知 verifier1\n- **verifier1** → 等待 #implement 完成后认领 #verify：对照 spec 验证实现，产出 attestation.json\n\n流水线：plan → implement → verify。规范位于 /srv/jwteam_clone/shared/run_current/spec/spec.md，工作区位于 /srv/jwteam_clone/shared/run_current/workspace。",
+      "content_len": 442
+    },
+    {
+      "order": 1,
+      "from": "cpool2",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 4,
+      "send_seq": 1177,
+      "send_ts": 1786174076.828532,
+      "content": "Leader，已收到团队启动通知。\n\n当前状态：\n- `plan` 任务已被 planner1 认领（claimed）\n- `implement` 和 `verify` 均为 blocked 状态\n- 我作为 Planner #2 暂时没有可领取的任务\n\n我已完整阅读 spec.md，掌握了全部 8 项硬性需求。如果 planner1 遇到问题需要协助，或流水线中有新的规划需求，我随时待命。",
+      "content_len": 197
+    },
+    {
+      "order": 2,
+      "from": "team_leader",
+      "to": "fullstack1",
+      "broadcast": false,
+      "recipients": [
+        "fullstack1"
+      ],
+      "delivered": true,
+      "from_turn": 9,
+      "send_seq": 1774,
+      "send_ts": 1786174085.532426,
+      "content": "fullstack1，当前流水线（plan → implement → verify）已完整覆盖，各环节都有专人。你保持待命即可，无需做 executor1 的备份。\n\n如果后续出现以下情况我会找你：\n- executor1 或 verifier1 卡住超出合理时间\n- 需要额外的独立验证（作为第二验证者）\n- 有突发的新需求需要快速端到端处理\n\n现在休息，等通知。",
+      "content_len": 184
+    },
+    {
+      "order": 3,
+      "from": "team_leader",
+      "to": "planner2",
+      "broadcast": false,
+      "recipients": [
+        "planner2"
+      ],
+      "delivered": true,
+      "from_turn": 10,
+      "send_seq": 1828,
+      "send_ts": 1786174090.091902,
+      "content": "planner2，收到。planner1 已认领 #plan 并在执行中，当前没有额外的规划需求。你保持待命即可，如果后续需要第二份独立计划或 planner1 遇到阻塞，我会联系你。",
+      "content_len": 92
+    },
+    {
+      "order": 4,
+      "from": "cpool1",
+      "to": "executor1",
+      "broadcast": false,
+      "recipients": [
+        "executor1"
+      ],
+      "delivered": true,
+      "from_turn": 6,
+      "send_seq": 2581,
+      "send_ts": 1786174115.98138,
+      "content": "\n## Mock 测试实现计划 — TEST9: Mock-Based API Testing\n\n本计划基于 `/srv/jwteam_clone/shared/run_current/spec/spec.md` 的完整规范制定。\n\n---\n\n### 一、目标\n\n为 `service.py` 中 3 个外部 API 调用编写全面的 mock 测试，**不产生真实网络请求**。同时修复 `send_notification` 缺失的错误处理。\n\n---\n\n### 二、service.py 预期结构（供你创建/修复）\n\n根据 spec，`service.py` 应包含 3 个函数，均使用 `requests` 库调用外部 HTTP API：\n\n```python\nimport requests\n\nBASE_URL = \"https://api.example.com\"\n\ndef get_user(user_id):\n    \"\"\"调用用户 API，返回用户 dict\"\"\"\n    response = requests.get(f\"{BASE_URL}/users/{user_id}\")\n    return response.json()\n\ndef get_weather(city):\n    \"\"\"调用天气 API，返回天气 dict\"\"\"\n    response = requests.get(f\"{BASE_URL}/weather\", params={\"city\": city})\n    return response.json()\n\ndef send_notification(user_id, message):\n    \"\"\"调用通知 API，返回状态 — 需修复：添加 try/except 处理 timeout\"\"\"\n    # BUG: 缺少 try/except，timeout 会导致程序崩溃\n    response = requests.post(\n        f\"{BASE_URL}/notify\",\n        json={\"user_id\": user_id, \"message\": message},\n        timeout=5\n    )\n    return response.json()\n```\n\n> ⚠️ 若实际 `service.py` 结构有差异，请以实际代码为准调整。本计划的 mock 策略和测试逻辑覆盖所有核心场景。\n\n---\n\n### 三、Mock 策略\n\n| 维度 | 策略 |\n|------|------|\n| **Mock 目标** | `requests.get` 和 `requests.post`，使用 `unittest.mock.patch` |\n| **工具** | `unittest.mock`（标准库，无需额外安装） |\n| **成功场景** | `get_user` 和 `get_weather` → mock `response.json()` 返回预期 dict；`response.status_code = 200` |\n| **错误场景** | `send_notification` → mock `requests.post` 抛出 `requests.exceptions.Timeout`，验证返回 error dict 而非崩溃 |\n| **patch 方式** | 在测试类中使用 `@patch('service.requests.get')` / `@patch('service.requests.post')`，每个测试独立 mock |\n\n---\n\n### 四、send_notification 错误处理修复方案\n\n在 `send_notification` 中添加 try/except 包裹 API 调用：\n\n```python\ndef send_notification(user_id, message):\n    try:\n        response = requests.post(\n            f\"{BASE_URL}/notify\",\n            json={\"user_id\": user_id, \"message\": message},\n            timeout=5\n        )\n        response.raise_for_status()\n        return response.json()\n    except requests.exceptions.Timeout:\n        return {\"status\": \"error\", \"message\": \"Request timed out\"}\n    except requests.exceptions.ConnectionError:\n        return {\"status\": \"error\", \"message\": \"Connection failed\"}\n    except requests.exceptions.RequestException as e:\n        return {\"status\": \"error\", \"message\": str(e)}\n```\n\n---\n\n### 五、测试函数清单（10 个 — 满足 ≥8 要求）\n\n| # | 测试函数 | 覆盖 API | Mock 行为 | 断言要点 |\n|---|---------|----------|-----------|----------|\n| 1 | `test_get_user_success` | `get_user` | mock `requests.get` 返回 `{\"id\": 1, \"name\": \"Alice\", \"email\": \"alice@example.com\"}` | ✅ URL 为 `/users/1`；参数正确；返回值含 `id`/`name`/`email` |\n| 2 | `test_get_user_url_and_params` | `get_user` | mock `requests.get` 返回任意用户数据 | ✅ `requests.get` 被调用时 URL = `https://api.example.com/users/42` |\n| 3 | `test_get_user_returns_correct_shape` | `get_user` | mock 返回含 `id`/`name`/`email` 的 dict | ✅ 返回值是 dict；必须包含 `id`/`name`/`email` 三个 key |\n| 4 | `test_get_weather_success` | `get_weather` | mock `requests.get` 返回 `{\"city\": \"Beijing\", \"temperature\": 25, \"condition\": \"Sunny\"}` | ✅ URL 为 `/weather`；params = `{\"city\": \"Beijing\"}`；返回值含 `city`/`temperature`/`condition` |\n| 5 | `test_get_weather_different_city` | `get_weather` | mock `requests.get` 返回不同城市的天气数据 | ✅ 调用参数中 `params[\"city\"]` = 传入的城市名（如 `\"Shanghai\"`） |\n| 6 | `test_get_weather_returns_correct_shape` | `get_weather` | mock 返回含 `city`/`temperature`/`condition` 的 dict | ✅ 返回值是 dict；必须包含 `city`/`temperature`/`condition` |\n| 7 | `test_send_notification_success` | `send_notification` | mock `requests.post` 返回 `{\"status\": \"ok\", \"message_id\": \"msg-123\"}` | ✅ URL 为 `/notify`；json payload 含 `user_id`/`message`；返回值含 `status` 和 `message_id` |\n| 8 | `test_send_notification_payload` | `send_notification` | mock `requests.post` 返回任意成功数据 | ✅ `requests.post` 被调用时 json 参数 = `{\"user_id\": 1, \"message\": \"Hello\"}` |\n| 9 | `test_send_notification_timeout` | `send_notification` | mock `requests.post` 抛出 `requests.exceptions.Timeout` | ✅ 不抛异常；返回 error dict：`{\"status\": \"error\", ...}` |\n| 10 | `test_send_notification_connection_error` | `send_notification` | mock `requests.post` 抛出 `requests.exceptions.ConnectionError` | ✅ 不抛异常；返回 error dict：`{\"status\": \"error\", ...}` |\n\n---\n\n### 六、断言要点总结\n\n每个测试必须覆盖三类断言：\n\n1. **URL/端点断言**：\n   - 验证 `mock_get` / `mock_post` 的 `call_args` 中 URL 正确（如 `assert mock_get.call_args[0][0] == \"https://api.example.com/users/1\"`）\n\n2. **参数断言**：\n   - `get_user`：URL 中包含正确的 `user_id`\n   - `get_weather`：`params` 中包含正确的 `city`\n   - `send_notification`：`json` payload 中包含正确的 `user_id` 和 `message`\n\n3. **返回值断言**：\n   - 验证返回值是 `dict` 类型（`assert isinstance(result, dict)`）\n   - 验证返回 dict 包含预期的所有 key\n   - 验证错误场景返回 `{\"status\": \"error\", ...}`\n\n---\n\n### 七、文件交付物\n\n| 文件 | 操作 | 说明 |\n|------|------|------|\n| `workspace/service.py` | 新建或修复 | 3 个函数 + `send_notification` 的 try/except |\n| `workspace/test_service.py` | 新建 | 10 个 mock 测试函数，使用 `unittest.mock` |\n| `workspace/__init__.py` | 新建 | 空文件，确保 package 导入正常 |\n\n### 八、运行验证\n\n```bash\ncd /srv/jwteam_clone/shared/run_current/workspace\npython -m pytest test_service.py -v\n```\n\n预期：**10 passed, 0 failed**。\n\n---\n\n以上为完整计划。请严格按此方案实现，完成后通知 verifier1。\n",
+      "content_len": 5065
+    },
+    {
+      "order": 5,
+      "from": "cpool1",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 7,
+      "send_seq": 2642,
+      "send_ts": 1786174123.289541,
+      "content": "## #plan 任务完成汇报\n\n已完成 Mock 测试实现计划的制定，并发送给 executor1。计划要点：\n\n**Mock 策略**：使用 `unittest.mock.patch` 分别 mock `requests.get` 和 `requests.post`，成功场景返回预期 dict，错误场景抛出 `requests.exceptions.Timeout` / `ConnectionError`。\n\n**send_notification 修复方案**：添加 try/except 捕获 `Timeout`、`ConnectionError`、`RequestException`，返回 `{\"status\": \"error\", \"message\": \"...\"}`。\n\n**10 个测试函数**（覆盖所有 3 个 API）：\n- get_user：`test_get_user_success`、`test_get_user_url_and_params`、`test_get_user_returns_correct_shape`\n- get_weather：`test_get_weather_success`、`test_get_weather_different_city`、`test_get_weather_returns_correct_shape`\n- send_notification：`test_send_notification_success`、`test_send_notification_payload`、`test_send_notification_timeout`、`test_send_notification_connection_error`\n\n**三层断言**：每条测试均覆盖 URL 正确性、参数正确性、返回值结构。\n\n等待 executor1 认领 #implement 并执行。流水线已启动。",
+      "content_len": 832
+    },
+    {
+      "order": 6,
+      "from": "cpool1",
+      "to": "fullstack1",
+      "broadcast": false,
+      "recipients": [
+        "fullstack1"
+      ],
+      "delivered": true,
+      "from_turn": 10,
+      "send_seq": 2999,
+      "send_ts": 1786174139.943697,
+      "content": "确认：实现计划已发送给 executor1，且 executor1 已回复确认收到，正在认领 #implement 并开始实施。计划覆盖了全部 3 个 API 的 mock 策略、send_notification 错误处理修复方案、10 个测试函数及三层断言要点。流水线目前状态：#plan ✅ → #implement 🏗️（executor1 执行中）→ #verify ⏳（等待解锁）。如有需要，随时联系。",
+      "content_len": 207
+    },
+    {
+      "order": 7,
+      "from": "team_leader",
+      "to": "*",
+      "broadcast": true,
+      "recipients": [
+        "cpool1",
+        "cpool2"
+      ],
+      "delivered": true,
+      "from_turn": 21,
+      "send_seq": 3535,
+      "send_ts": 1786174322.463726,
+      "content": "🎉 本轮任务全部完成。总结：\n\n| 任务 | 负责人 | 状态 |\n|------|--------|------|\n| #plan 制定实现计划 | planner1 | ✅ 10 个测试函数 + mock 策略 + 修复方案 |\n| #implement 实现与修复 | executor1 | ✅ test_service.py + service.py 修复 |\n| #verify 独立验证 | verifier1 | ✅ 8/8 PASS — attestation.json |\n\nverifier1 独立验证通过：所有 8 条 spec 需求满足，10 个 mock 测试覆盖 3 个 API，send_notification 错误处理已修复。\n\n团队进入待命状态，等待下一轮指令。",
+      "content_len": 350
+    },
+    {
+      "order": 8,
+      "from": "cpool2",
+      "to": "team_leader",
+      "broadcast": false,
+      "recipients": [
+        "team_leader"
+      ],
+      "delivered": true,
+      "from_turn": 11,
+      "send_seq": 2175,
+      "send_ts": 1786174328.291199,
+      "content": "收到，Leader。本轮流水线全部走完：plan（planner1）→ implement（executor1）→ verify（verifier2），verifier1 独立验证 8/8 PASS。虽然本轮我作为 Planner #2 未分配到具体任务，但已全程掌握 spec 规范和项目上下文，下一轮如有并行规划需求可随时响应。待命中。",
+      "content_len": 170
+    }
+  ]
+}

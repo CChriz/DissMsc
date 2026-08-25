@@ -1,0 +1,64 @@
+{
+  "verdict": "PASS",
+  "timestamp": "2026-08-10T03:29:40+01:00",
+  "verifier": "verifier1",
+  "spec_version": "TEST9: Mock-Based API Testing",
+  "requirements": {
+    "1_mock_all_3_apis": {
+      "status": "PASS",
+      "detail": "所有 3 个 API 调用均被正确 mock：get_user 和 get_weather 使用 @patch('service.requests.get')，send_notification 使用 @patch('service.requests.post')。无真实网络调用。"
+    },
+    "2_test_file_format": {
+      "status": "PASS",
+      "detail": "test_service.py 使用 unittest.mock（from unittest.mock import MagicMock, patch），符合规范。"
+    },
+    "3_success_response_mocking": {
+      "status": "PASS",
+      "detail": "test_get_user_success 和 test_get_weather_success 均模拟了符合预期形状的成功响应（含 id/name/email 和 city/temp/humidity/condition）。"
+    },
+    "4_error_simulation_timeout": {
+      "status": "PASS",
+      "detail": "test_send_notification_timeout 模拟 requests.exceptions.Timeout，test_send_notification_connection_error 模拟 requests.exceptions.ConnectionError，两者均返回 {'status': 'error', 'reason': 'timeout'}，未崩溃。"
+    },
+    "5_assertions_url_params_return": {
+      "status": "PASS",
+      "detail": "所有成功路径测试均通过 assert_called_once_with/assert_any_call 验证了 URL 和参数，并通过 assert 验证了返回值形状。错误路径测试侧重于验证异常传播或错误 dict 返回，符合错误路径测试惯例。",
+      "notes": "错误路径测试（test_send_notification_timeout、test_send_notification_connection_error）未显式断言 URL/参数，但由于 mock.side_effect 记录调用，不影响测试有效性。"
+    },
+    "6_fix_send_notification_error_handling": {
+      "status": "PASS",
+      "detail": "service.py 中 send_notification 已添加 try/except，捕获 requests.exceptions.Timeout 和 requests.exceptions.ConnectionError，均返回 {'status': 'error', 'reason': 'timeout'}。未使用裸 except，HTTPError 仍正常传播。"
+    },
+    "7_pytest_zero_failures": {
+      "status": "PASS",
+      "detail": "python -m pytest test_service.py -v 运行结果：8 passed in 0.09s，零失败。"
+    },
+    "8_minimum_8_test_functions": {
+      "status": "PASS",
+      "detail": "共计 8 个测试函数，覆盖所有 API 调用和错误路径。"
+    }
+  },
+  "pytest_output": "8 passed in 0.09s",
+  "test_functions": [
+    "test_get_user_success",
+    "test_get_user_http_error",
+    "test_get_weather_success",
+    "test_get_weather_connection_error",
+    "test_send_notification_success",
+    "test_send_notification_timeout",
+    "test_send_notification_connection_error",
+    "test_process_user_weather_success"
+  ],
+  "coverage_summary": {
+    "get_user": "成功路径 + HTTP 404 错误路径",
+    "get_weather": "成功路径 + ConnectionError 错误路径",
+    "send_notification": "成功路径 + Timeout 错误路径 + ConnectionError 错误路径",
+    "process_user_weather": "组合调用成功路径"
+  },
+  "review_notes": [
+    "Mock 作用域正确：均使用 @patch('service.requests.xxx') 而非 @patch('requests.xxx')，确保只 mock service 模块内的调用。",
+    "辅助函数 _mock_response 正确模拟了 Response 对象的 .json() 和 .raise_for_status() 方法。",
+    "test_process_user_weather_success 中 mock_get.side_effect 返回列表用于模拟两次不同调用，写法规范。",
+    "装饰器叠加顺序正确：@patch('service.requests.post') 在外层，@patch('service.requests.get') 在内层，参数顺序匹配。"
+  ]
+}

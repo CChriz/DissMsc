@@ -1,0 +1,78 @@
+[
+  {
+    "subtask": "multi4",
+    "verdict": "PASS",
+    "verifier": "verifier1",
+    "timestamp": "2026-08-08T05:31:00+01:00",
+    "checks": [
+      {
+        "id": 1,
+        "description": "循环依赖已解除 — models 不再从 api 导入",
+        "status": "PASS",
+        "detail": "models/helpers.py:11 已从 'from api.formatters' 改为 'from utils.formatters import format_response'，models → utils 替换了原有的 models → api → core → models 环路。"
+      },
+      {
+        "id": 2,
+        "description": "版本 pin 已更新为 core>=1.2",
+        "status": "PASS",
+        "detail": "utils/setup.cfg:9 已从 'core==1.0' 改为 'core>=1.2'。"
+      },
+      {
+        "id": 3,
+        "description": "worker 的 import 已指向 utils",
+        "status": "PASS",
+        "detail": "worker/tasks.py:11 已从 'from core.processing import process_item' 改为 'from utils.processing import process_item'。"
+      },
+      {
+        "id": 4,
+        "description": "所有版本约束可同时满足",
+        "status": "PASS",
+        "detail": "core=1.2.0 满足 utils≥1.2, models≥1.0, api≥1.0, worker≥1.0；models=1.1.0 满足 api≥1.0。无冲突。"
+      },
+      {
+        "id": 5,
+        "description": "api/formatters.py 保留了向后兼容的 re-export",
+        "status": "PASS",
+        "detail": "api/formatters.py:10 包含 'from utils.formatters import format_response' re-export，format_error 仍本地定义，api/endpoints.py 及其他外部消费者无需修改。"
+      }
+    ],
+    "test_results": {
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "source": "executor1 pytest report — tests/test_imports.py (5 tests) + tests/test_versions.py (2 tests)"
+    }
+  },
+  {
+    "subtask": "spec5",
+    "verdict": "PASS",
+    "verifier": "verifier2",
+    "timestamp": "2026-08-08T05:34:00+01:00",
+    "checks": [
+      {
+        "id": 1,
+        "description": "全部 11 个配置项存在于 get_schema() 且类型/默认值/校验规则正确",
+        "status": "PASS",
+        "detail": "_SCHEMA 包含全部 11 个 key：queue_url(string, 'redis://localhost:6379/0', non-empty), concurrency(int, 3, [1,32]), max_retries(int, 8, [0,20]), retry_backoff_seconds(int, 1, [1,300]), job_timeout(int, 300, [1,3600]), log_level(enum, 'INFO', ['DEBUG','INFO','WARN']), dead_letter_queue(bool, True), heartbeat_interval(int, 60, [5,300]), prefetch_count(int, 10, [1,100]), ack_on_failure(bool, False), metrics_enabled(bool, True)。env_var 映射全部 11 项与 spec 一致。get_schema() 返回 schema 副本。"
+      },
+      {
+        "id": 2,
+        "description": "load_config 优先级级联正确（CLI > env > config file > defaults）",
+        "status": "PASS",
+        "detail": "load_config() 按顺序 overlay：defaults → config file → env vars → cli_args，最终 cli_args 优先级最高，env 次之，file 再次之，defaults 最低。与 spec 要求 CLI > env > config file > defaults 一致。config_file 不存在时 open() 自然抛出 FileNotFoundError。未知 key 通过 'if key in _SCHEMA' 自动忽略。所有 schema key 均出现在最终返回 dict 中。"
+      },
+      {
+        "id": 3,
+        "description": "类型强制转换正确",
+        "status": "PASS",
+        "detail": "bool：接受 bool 原值、int 0/1、字符串 true/false/1/0/yes/no/on/off（case-insensitive），其他值抛 ConfigValidationError。int：int() 转换，失败抛 ConfigValidationError，转换后校验 [min,max] 范围。float：float() 转换，失败抛 ConfigValidationError。enum：直接与 allowed 列表匹配（case-sensitive），不匹配抛 ConfigValidationError。string：非空校验，空字符串拒绝。int/float 对空字符串 '' 转换失败正确抛 ConfigValidationError。"
+      },
+      {
+        "id": 4,
+        "description": "ConfigValidationError 正确抛出且包含 key 和 invalid value",
+        "status": "PASS",
+        "detail": "ConfigValidationError 继承 ValueError，__init__ 接收 key 和 value 参数，存储为 self.key 和 self.value，消息格式为 \"Invalid value for '{key}': {value!r}\"。所有验证失败路径均通过 raise ConfigValidationError(key, value) 抛出，包含 key 名和无效值。"
+      }
+    ]
+  }
+]

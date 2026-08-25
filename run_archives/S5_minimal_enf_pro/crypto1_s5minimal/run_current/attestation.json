@@ -1,0 +1,37 @@
+{
+  "verifier": "verifier2",
+  "spec": "/srv/jwteam_clone/shared/run_current/spec/v_spec.md",
+  "timestamp": "2026-08-09T16:39:50+01:00",
+  "overall_verdict": "PASS",
+  "requirements": [
+    {
+      "id": 1,
+      "description": "Nonces must be 96-bit (12 bytes) and cryptographically random — not counter-based",
+      "file": "crypto_service/nonce.py",
+      "verdict": "PASS",
+      "detail": "NonceGenerator.generate() now uses os.urandom(12), which produces cryptographically random 96-bit (12-byte) nonces. No longer counter-based. Satisfies the requirement."
+    },
+    {
+      "id": 2,
+      "description": "Key derivation must use PBKDF2 with >= 100,000 iterations",
+      "file": "crypto_service/key_derivation.py",
+      "verdict": "PASS",
+      "detail": "iterations=100000, meeting the >= 100,000 threshold. (Verified unchanged from prior attestation.)"
+    },
+    {
+      "id": 3,
+      "description": "GCM authentication tag must be full 16 bytes — no truncation",
+      "file": "crypto_service/encryption.py",
+      "verdict": "PASS",
+      "detail": "Full 16-byte GCM tag with min_tag_length=16 on decrypt side. No truncation. (Verified unchanged from prior attestation.)"
+    },
+    {
+      "id": 4,
+      "description": "Salt generation using os.urandom() is already correct — do not modify it",
+      "file": "crypto_service/utils.py",
+      "verdict": "PASS",
+      "detail": "generate_salt() uses os.urandom(size) unchanged. (Verified unchanged from prior attestation.)"
+    }
+  ],
+  "summary": "4 of 4 requirements PASS. The nonce.py fix (os.urandom(12)) correctly replaces the counter-based approach with cryptographically random 96-bit nonces. All three original vulnerabilities (counter nonce, weak PBKDF2, truncated GCM tag) are now fully resolved."
+}

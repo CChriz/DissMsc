@@ -1,0 +1,80 @@
+{
+  "subtask_test9": {
+    "verdict": "pass",
+    "verifier": "verifier2",
+    "timestamp": "2026-08-08T13:31:00+01:00",
+    "checks": {
+      "mock_all_3_apis": {
+        "status": "pass",
+        "detail": "get_user, get_weather, send_notification 三个函数的 API 调用均被 mock 覆盖。test_service.py 包含针对每个 API 的独立测试。"
+      },
+      "test_file_format": {
+        "status": "pass",
+        "detail": "test_service.py 使用 unittest.mock (patch, Mock)，符合规范要求。"
+      },
+      "response_mocking": {
+        "status": "pass",
+        "detail": "get_user 和 get_weather 的成功响应均被正确 mock（test_get_user_success, test_get_user_returns_correct_shape, test_get_weather_success, test_get_weather_returns_correct_shape）。"
+      },
+      "error_simulation": {
+        "status": "pass",
+        "detail": "send_notification 的 Timeout 和 ConnectionError 均被 mock（test_send_notification_timeout, test_send_notification_connection_error），应用优雅处理返回 error dict 而非崩溃。"
+      },
+      "assertions": {
+        "status": "pass",
+        "detail": "所有测试均包含以下断言：(1) 正确的 URL/端点被调用 (test_get_user_url_and_params, test_get_weather_url_and_params, test_send_notification_payload)；(2) 正确的参数被传递；(3) 返回值形状正确 (test_get_user_returns_correct_shape, test_get_weather_returns_correct_shape)。"
+      },
+      "error_handling_fix": {
+        "status": "pass",
+        "detail": "service.py 中 send_notification 已添加 try/except，捕获 requests.exceptions.Timeout、ConnectionError 和 RequestException，均返回 error dict 而非崩溃。"
+      },
+      "test_count": {
+        "status": "pass",
+        "detail": "test_service.py 包含 10 个测试函数，超过最低要求 8 个。"
+      },
+      "executor_test_run": {
+        "status": "pass",
+        "detail": "executor2 报告运行 `python -m pytest tests/test_service.py -v` 结果：10 passed in 0.09s，零失败。（注：verifier2 受权限限制无法亲自执行命令，基于 executor2 报告和代码审查综合判定。）"
+      }
+    },
+    "summary": "test9 子任务全部 8 项硬性要求均通过。service.py 的 send_notification 已修复错误处理（try/except），test_service.py 包含 10 个 mock 测试覆盖全部 3 个 API 调用，断言覆盖 URL、参数和返回值形状。"
+  },
+  "subtask_p5": {
+    "verdict": "pass",
+    "verifier": "verifier1",
+    "timestamp": "2026-08-08T13:45:00+01:00",
+    "method": "static_analysis",
+    "note": "Permission boundary prohibits command execution; pytest NOT run. Verification based on thorough static analysis of audit.py, app.py, and test_audit.py against corpus/audit_policy.txt.",
+    "checks": {
+      "audit_log_event": {
+        "status": "pass",
+        "detail": "log_event(event_type, **fields) validates event_type against 5 supported types, generates UUID4 log_id, computes HMAC-SHA256 signature (fields sorted alphabetically excluding 'signature', compact JSON, key from AUDIT_HMAC_KEY defaulting to 'default-key'), appends to _AUDIT_LOG, returns complete entry dict."
+      },
+      "audit_get_log": {
+        "status": "pass",
+        "detail": "get_log() returns list(_AUDIT_LOG) — all stored audit entries as list[dict]."
+      },
+      "audit_verify_log": {
+        "status": "pass",
+        "detail": "verify_log(entries) detects missing 'signature' field, recomputes HMAC-SHA256 via _compute_signature(), uses hmac.compare_digest for timing-safe comparison, returns list[int] of tampered indices (empty if all valid)."
+      },
+      "hmac_sha256_implementation": {
+        "status": "pass",
+        "detail": "_compute_signature() correctly: excludes 'signature' field from canonical JSON, sorts keys alphabetically (sort_keys=True), uses compact separators (',', ':'), encodes with hashlib.sha256, returns hexdigest. Key from AUDIT_HMAC_KEY env var, fallback 'default-key'."
+      },
+      "app_integration": {
+        "status": "pass",
+        "detail": "All 5 event endpoints call audit.log_event() with correct event_type: /config-changed→config_changed, /user-login→user_login, /report-accessed→report_accessed, /data-exported→data_exported, /payment-initiated→payment_initiated. /audit-log GET exposes get_log(), /verify-log GET exposes verify_log()."
+      },
+      "test_coverage": {
+        "status": "pass",
+        "detail": "test_audit.py: 14 test functions covering return type, universal fields (event_type/log_id), log_id uniqueness, required fields for all 5 event types (parametrized), signature field presence/non-empty, get_log behavior, verify_log behavior (empty/valid/tampered), multi-event-type logging, and persistence."
+      },
+      "spec_compliance_section6": {
+        "status": "pass",
+        "detail": "All audit_policy.txt Section 6 requirements satisfied: (1) audit.py exposes log_event/get_log/verify_log; (2) log_event integrated into all app.py endpoints; (3) entries include caller-supplied fields per event type; (4) every entry has HMAC-SHA256 signature; (5) log_id uses uuid.uuid4()."
+      }
+    },
+    "summary": "p5 审计日志合规子任务全部通过。audit.py 正确实现了 log_event/get_log/verify_log，采用 HMAC-SHA256 签名防篡改；log_event 已集成到 app.py 全部 5 种事件端点。test_audit.py 覆盖 14 个测试用例，涵盖必填字段、签名、篡改检测等关键场景。代码结构与 audit_policy.txt 规范完全一致。"
+  }
+}

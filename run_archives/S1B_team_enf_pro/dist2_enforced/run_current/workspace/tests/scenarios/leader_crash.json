@@ -1,0 +1,44 @@
+{
+  "name": "leader_crash",
+  "description": "Leader is isolated mid-replication; new leader must have all committed entries",
+  "cluster_size": 5,
+  "steps": [
+    {
+      "action": "wait_leader"
+    },
+    {
+      "action": "submit",
+      "count": 5,
+      "label": "before_crash"
+    },
+    {
+      "action": "wait",
+      "ms": 300
+    },
+    {
+      "action": "isolate_leader"
+    },
+    {
+      "action": "wait",
+      "ms": 600
+    },
+    {
+      "action": "wait_leader",
+      "exclude_crashed": true
+    },
+    {
+      "action": "assert_leader_completeness"
+    },
+    {
+      "action": "heal_all"
+    },
+    {
+      "action": "wait",
+      "ms": 500
+    },
+    {
+      "action": "assert_convergence",
+      "min_committed": 5
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "verdict": "PASS",
+  "verified_by": "verifier2",
+  "timestamp": "2026-08-10T00:00:10+01:00",
+  "summary": "所有 3 个 Bug 修复均通过验证：循环导入已消除、版本锁定已更新、函数迁移引用已修正。集成测试 7/7 通过。",
+
+  "bugs": {
+    "bug_1_circular_import": {
+      "title": "models↔api 循环导入修复",
+      "verdict": "PASS",
+      "checks": {
+        "models_helpers_no_api_import": {
+          "status": "PASS",
+          "detail": "models/helpers.py 从 utils.formatters 导入 format_response，不再从 api 导入，循环依赖已打破"
+        },
+        "api_formatters_re_export": {
+          "status": "PASS",
+          "detail": "api/formatters.py 正确从 utils.formatters re-export format_response，format_error 保持不变"
+        },
+        "dependency_graph_acyclic": {
+          "status": "PASS",
+          "detail": "依赖图 DFS 遍历验证无环，导入分层 core → utils → {models, worker} → api 正确"
+        }
+      }
+    },
+    "bug_2_stale_version_pin": {
+      "title": "utils/setup.cfg 过期版本锁定修复",
+      "verdict": "PASS",
+      "checks": {
+        "core_version_pin_updated": {
+          "status": "PASS",
+          "detail": "utils/setup.cfg 中 core 版本锁已从 core==1.0 更新为 core>=1.2"
+        },
+        "feature_availability": {
+          "status": "PASS",
+          "detail": "utils/processing.py 使用的 core.base.BaseProcessor 需要 core≥1.2，core 1.2.0 提供该特性"
+        }
+      }
+    },
+    "bug_3_moved_function_reference": {
+      "title": "worker/tasks.py 已迁移函数引用修复",
+      "verdict": "PASS",
+      "checks": {
+        "worker_import_corrected": {
+          "status": "PASS",
+          "detail": "worker/tasks.py 已从 core.processing 改为从 utils.processing 导入 process_item"
+        },
+        "worker_task_runs": {
+          "status": "PASS",
+          "detail": "RunBatchTask.run() 运行时测试通过，process_item 函数正确可用"
+        }
+      }
+    }
+  },
+
+  "test_results": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "duration_seconds": 0.07,
+    "details": [
+      {"test": "test_models_helpers_no_api_import", "status": "PASS"},
+      {"test": "test_models_imports_successfully", "status": "PASS"},
+      {"test": "test_dependency_graph_acyclic", "status": "PASS"},
+      {"test": "test_worker_imports_from_utils", "status": "PASS"},
+      {"test": "test_worker_task_runs", "status": "PASS"},
+      {"test": "test_utils_core_pin_not_stale", "status": "PASS"},
+      {"test": "test_all_versions_satisfiable", "status": "PASS"}
+    ]
+  },
+
+  "version_constraints": {
+    "verified_by": "verifier1",
+    "verdict": "PASS",
+    "detail": "所有包版本约束可同时满足。utils→core>=1.2 由 core 1.2.0 满足。依赖图：core 1.2.0 → models 1.1.0(core>=1.0) / api 1.0.0(core>=1.0,models>=1.0) / utils 1.1.0(core>=1.2) / worker 1.0.0(core>=1.0,utils>=1.1) 全部可解析"
+  },
+
+  "package_boundary": {
+    "verified_against": "planner1 的导入分层标准",
+    "verdict": "PASS",
+    "detail": "导入分层 core → utils → {models, worker} → api 符合目标。禁止方向（models→api, api→models, core→*, utils→*）无违规。"
+  }
+}

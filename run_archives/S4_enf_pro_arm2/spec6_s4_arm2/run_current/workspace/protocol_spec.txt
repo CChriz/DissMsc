@@ -1,0 +1,97 @@
+KVP — Key-Value Protocol Specification
+======================================
+
+1. Introduction
+
+   KVP is a simple text-based protocol for an in-memory key-value store.
+   Commands are line-oriented. Each command is a single line of text.
+   Responses follow a structured format described below.
+
+2. Commands
+
+   2.1 SET <key> <value>
+       Store the given value under the given key.
+       Response: OK
+       Errors: ERR key_too_long (if key exceeds 64 chars)
+               ERR value_too_large (if value exceeds 1024 chars)
+               ERR store_full (if store has 100 keys and key is new)
+
+   2.2 GET <key>
+       Retrieve the value stored under the given key.
+       Response: the value on a single line
+       Errors: ERR key_not_found
+
+   2.3 DEL <key>
+       Remove the given key from the store.
+       Response: OK
+       Errors: ERR key_not_found
+
+   2.4 KEYS
+       List all stored keys.
+       Response: one key per line, terminated by END
+
+   2.5 COUNT
+       Return the number of stored keys.
+       Response: COUNT <n>
+
+   2.6 EXISTS <key>
+       Check if a key exists.
+       Response: TRUE or FALSE
+
+   2.7 FLUSH
+       Remove all keys.
+       Response: OK
+
+   2.8 MSET <key1> <value1> <key2> <value2> ...
+       Set multiple key-value pairs atomically.
+       Response: OK <n> (where n = number of pairs set)
+
+   2.9 MGET <key1> <key2> ...
+       Get multiple values.
+       Response: value or NIL per key, one per line, terminated by END
+
+   2.10 SETEX <key> <seconds> <value>
+        Set a key with an expiration time in seconds.
+        Response: OK
+        After expiration, the key is treated as non-existent.
+
+   2.11 TTL <key>
+        Return remaining time-to-live in seconds, or -1 if no expiry.
+        Errors: ERR key_not_found
+
+   2.12 APPEND <key> <value>
+        Append to existing value, or create new key.
+        Response: OK <new_length>
+
+   2.13 RENAME <old_key> <new_key>
+        Rename a key.
+        Response: OK
+        Errors: ERR key_not_found
+
+   2.14 TYPE <key>
+        Return the type of the value (STRING or INTEGER).
+        Errors: ERR key_not_found
+
+   2.15 DUMP
+        Return all key-value pairs as <key>=<value>, terminated by END
+
+3. Limits
+
+   Maximum key length: 64 characters
+   Maximum value size: 1024 characters
+   Maximum stored keys: 100
+
+4. Error Codes
+
+   ERR key_not_found    — key does not exist
+   ERR key_too_long     — key exceeds maximum length
+   ERR value_too_large  — value exceeds maximum size
+   ERR store_full       — store at maximum capacity for new keys
+   ERR unknown_command  — unrecognized command
+
+5. Response Format
+
+   Success: OK, OK <detail>, TRUE, FALSE, COUNT <n>
+   Value: the raw value on its own line
+   List: one item per line, terminated by END
+   Error: ERR <error_code>
